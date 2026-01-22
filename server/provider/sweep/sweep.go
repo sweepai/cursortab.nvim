@@ -3,6 +3,7 @@ package sweep
 import (
 	"bytes"
 	"context"
+	"cursortab/logger"
 	"cursortab/types"
 	"encoding/json"
 	"fmt"
@@ -94,6 +95,15 @@ func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionReque
 	}
 	reqBody := reqBodyBuf.Bytes()
 
+	// Debug logging for request
+	logger.Debug("Sweep provider request to %s:\n  Model: %s\n  Temperature: %.2f\n  MaxTokens: %d\n  Prompt length: %d chars\n  Prompt:\n%s",
+		p.url+"/v1/completions",
+		completionReq.Model,
+		completionReq.Temperature,
+		completionReq.MaxTokens,
+		len(prompt),
+		prompt)
+
 	// Create HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.url+"/v1/completions", bytes.NewReader(reqBody))
 	if err != nil {
@@ -126,8 +136,18 @@ func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionReque
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	// Debug logging for response
+	logger.Debug("Sweep provider response:\n  ID: %s\n  Model: %s\n  Choices: %d\n  Usage: prompt=%d, completion=%d, total=%d",
+		completionResp.ID,
+		completionResp.Model,
+		len(completionResp.Choices),
+		completionResp.Usage.PromptTokens,
+		completionResp.Usage.CompletionTokens,
+		completionResp.Usage.TotalTokens)
+
 	// Check if we got any completions
 	if len(completionResp.Choices) == 0 {
+		logger.Debug("Sweep provider returned no completions")
 		return &types.CompletionResponse{
 			Completions:  []*types.Completion{},
 			CursorTarget: nil,
@@ -136,9 +156,11 @@ func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionReque
 
 	// Extract the completion text (this is the predicted updated content)
 	completionText := completionResp.Choices[0].Text
+	logger.Debug("Sweep completion text (%d chars):\n%s", len(completionText), completionText)
 
 	// If the completion is empty or just whitespace, return empty response
 	if strings.TrimSpace(completionText) == "" {
+		logger.Debug("Sweep completion text is empty after trimming")
 		return &types.CompletionResponse{
 			Completions:  []*types.Completion{},
 			CursorTarget: nil,
@@ -148,11 +170,14 @@ func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionReque
 	// Parse the completion into a result
 	completion := p.parseCompletion(req, completionText)
 	if completion == nil {
+		logger.Debug("Sweep parseCompletion returned nil (no changes detected)")
 		return &types.CompletionResponse{
 			Completions:  []*types.Completion{},
 			CursorTarget: nil,
 		}, nil
 	}
+
+	logger.Debug("Sweep parsed completion: StartLine=%d, EndLineInc=%d, Lines=%d", completion.StartLine, completion.EndLineInc, len(completion.Lines))
 
 	return &types.CompletionResponse{
 		Completions:  []*types.Completion{completion},

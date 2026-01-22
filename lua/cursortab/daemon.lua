@@ -50,6 +50,7 @@ local function start_daemon()
 		provider_temperature = cfg.provider_temperature,
 		provider_max_tokens = cfg.provider_max_tokens,
 		provider_top_k = cfg.provider_top_k,
+		log_level = cfg.log_level,
 	})
 
 	local env = vim.fn.environ()

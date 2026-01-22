@@ -23,6 +23,7 @@
 ---@field provider_max_tokens integer
 ---@field provider_top_k integer
 ---@field max_context_tokens integer
+---@field log_level string
 
 -- Default configuration
 ---@type CursortabConfig
@@ -55,6 +56,7 @@ local default_config = {
 	max_context_tokens = 1024, -- Max tokens to send as context (0 = no limit)
 
 	-- INTERNAL
+	log_level = "info", -- Log level: "debug", "info", "warn", "error"
 	event_debounce = 10, -- Debounce in ms for events to go
 	debug_immediate_shutdown = false, -- Shutdown daemon immediately when no clients are connected
 	debug_color = "#cccc55",

@@ -1,7 +1,9 @@
 package text
 
 import (
+	"cursortab/logger"
 	"cursortab/types"
+	"encoding/json"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -208,6 +210,12 @@ func (b *Buffer) OnCompletionReady(n *nvim.Nvim, startLine, endLineInclusive int
 		"endLineInclusive", endLineInclusive,
 	)
 
+	// Debug logging for data sent to Lua
+	if jsonData, err := json.Marshal(luaDiffResult); err == nil {
+		logger.Debug("Sending to Lua on_completion_ready:\n  startLine: %d\n  endLineInclusive: %d\n  lines: %d\n  diffResult: %s",
+			startLine, endLineInclusive, len(lines), string(jsonData))
+	}
+
 	b.executeLuaFunction(n, "require('cursortab').on_completion_ready(...)", luaDiffResult)
 
 	return applyBatch
@@ -253,10 +261,12 @@ func (b *Buffer) CommitPendingEdit() {
 }
 
 func (b *Buffer) OnCursorPredictionReady(n *nvim.Nvim, line int) {
+	logger.Debug("Sending to Lua on_cursor_prediction_ready: line=%d", line)
 	b.executeLuaFunction(n, "require('cursortab').on_cursor_prediction_ready(...)", line)
 }
 
 func (b *Buffer) OnReject(n *nvim.Nvim) {
+	logger.Debug("Sending to Lua on_reject")
 	b.executeLuaFunction(n, `require('cursortab').on_reject()`)
 }
 

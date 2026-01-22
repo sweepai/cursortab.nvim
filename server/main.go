@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cursortab/logger"
 	"encoding/json"
 	"log"
 	"os"
@@ -21,6 +22,7 @@ type Config struct {
 	ProviderTemperature    float64 `json:"provider_temperature"`
 	ProviderMaxTokens      int     `json:"provider_max_tokens"`
 	ProviderTopK           int     `json:"provider_top_k"`
+	LogLevel               string  `json:"log_level"` // debug, info, warn, error
 }
 
 type ServerMode string
@@ -32,7 +34,7 @@ const (
 
 // Setup logger to log to a file in the same directory as the executable
 // Caller must defer logger.Close()
-func setupLogger() *LimitedLogger {
+func setupLogger(logLevel string) *logger.LimitedLogger {
 	execPath, err := os.Executable()
 	if err != nil {
 		log.Fatalf("error getting executable path: %v", err)
@@ -45,7 +47,8 @@ func setupLogger() *LimitedLogger {
 		log.Fatalf("error opening file: %v", err)
 	}
 
-	limitedLogger := NewLimitedLogger(f)
+	level := logger.ParseLogLevel(logLevel)
+	limitedLogger := logger.NewLimitedLogger(f, level)
 	log.SetOutput(limitedLogger)
 	return limitedLogger
 }
@@ -102,10 +105,17 @@ func loadConfig() Config {
 }
 
 func runDaemon() {
-	logger := setupLogger()
+	config := loadConfig()
+
+	// Default to info level if not specified
+	logLevel := config.LogLevel
+	if logLevel == "" {
+		logLevel = "info"
+	}
+
+	logger := setupLogger(logLevel)
 	defer logger.Close()
 
-	config := loadConfig()
 	daemon, err := NewDaemon(config)
 	if err != nil {
 		log.Fatalf("error creating daemon: %v", err)
