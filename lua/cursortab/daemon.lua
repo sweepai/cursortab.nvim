@@ -15,7 +15,11 @@ local is_enabled = true
 -- Start the daemon process
 local function start_daemon()
 	local plugin_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")
-	local binary_path = plugin_dir .. "/server/cursortab"
+	local binary_name = "cursortab"
+	if vim.fn.has("win32") == 1 or vim.fn.has("win64") == 1 then
+		binary_name = binary_name .. ".exe"
+	end
+	local binary_path = plugin_dir .. "/server/" .. binary_name
 	local socket_path = plugin_dir .. "/server/cursortab.sock"
 
 	-- Check if binary exists
@@ -26,7 +30,7 @@ local function start_daemon()
 				.. "\n"
 				.. "Please ensure the Go server was built during installation.\n"
 				.. "If using lazy.nvim, make sure the build step is configured:\n"
-				.. 'build = "cd server && go build -o cursortab ."',
+				.. 'build = "cd server && go build"',
 			vim.log.levels.ERROR
 		)
 		return false
