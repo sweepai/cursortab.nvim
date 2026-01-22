@@ -57,6 +57,7 @@ require("cursortab").setup({
   provider = "autocomplete",         -- Provider: "autocomplete", "sweep", or "zeta"
   idle_completion_delay = 50,        -- Delay in ms after being idle to trigger completion (-1 to disable)
   text_changed_debounce = 50,        -- Debounce in ms after text changed to trigger completion
+  completion_timeout = 5000,         -- Timeout in ms for completion requests
 
   -- CONTEXT OPTIONS
   max_context_tokens = 1024,         -- Max tokens to send as context (0 = no limit)

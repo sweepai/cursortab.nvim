@@ -33,15 +33,10 @@ type Daemon struct {
 }
 
 func NewDaemon(config Config) (*Daemon, error) {
-	maxContextTokens := config.MaxContextTokens
-	if maxContextTokens == 0 {
-		maxContextTokens = 1024 // default
-	}
-
 	provider, err := provider.NewProvider(
 		types.ProviderType(config.Provider),
 		&types.ProviderConfig{
-			MaxTokens:           maxContextTokens,
+			MaxTokens:           config.MaxContextTokens,
 			ProviderURL:         config.ProviderURL,
 			ProviderModel:       config.ProviderModel,
 			ProviderTemperature: config.ProviderTemperature,
@@ -55,10 +50,10 @@ func NewDaemon(config Config) (*Daemon, error) {
 
 	eng, err := engine.NewEngine(provider, engine.EngineConfig{
 		NsID:                config.NsID,
-		CompletionTimeout:   time.Second * 5,
+		CompletionTimeout:   time.Duration(config.CompletionTimeout) * time.Millisecond,
 		IdleCompletionDelay: time.Duration(config.IdleCompletionDelay) * time.Millisecond,
 		TextChangeDebounce:  time.Duration(config.TextChangeDebounce) * time.Millisecond,
-		MaxDiffTokens:       512, // Limit diff history to 512 tokens per file (similar to MaxTokens/2)
+		MaxDiffTokens:       config.MaxContextTokens / 2,
 	})
 	if err != nil {
 		return nil, err

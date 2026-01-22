@@ -15,6 +15,7 @@
 ---@field idle_completion_delay integer
 ---@field text_changed_debounce integer
 ---@field event_debounce integer
+---@field completion_timeout integer
 ---@field debug_immediate_shutdown boolean
 ---@field debug_color string
 ---@field provider_url string
@@ -44,6 +45,7 @@ local default_config = {
 	provider = "autocomplete", -- "autocomplete", "sweep", or "zeta"
 	idle_completion_delay = 50, -- Delay in ms after being idle in normal mode to trigger completion (-1 to disable)
 	text_changed_debounce = 50, -- Debounce in ms after text changed to trigger completion
+	completion_timeout = 5000, -- Timeout in ms for completion requests
 
 	-- Provider Options (applied to all providers: autocomplete, sweep, zeta)
 	provider_url = "http://localhost:8000", -- URL of the provider server

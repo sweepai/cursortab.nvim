@@ -15,6 +15,7 @@ type Config struct {
 	Provider               string  `json:"provider"`
 	IdleCompletionDelay    int     `json:"idle_completion_delay"` // in milliseconds
 	TextChangeDebounce     int     `json:"text_change_debounce"`  // in milliseconds
+	CompletionTimeout      int     `json:"completion_timeout"`    // in milliseconds
 	DebugImmediateShutdown bool    `json:"debug_immediate_shutdown"`
 	MaxContextTokens       int     `json:"max_context_tokens"` // max tokens for context trimming
 	ProviderURL            string  `json:"provider_url"`

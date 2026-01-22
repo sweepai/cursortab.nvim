@@ -43,6 +43,7 @@ local function start_daemon()
 		provider = cfg.provider,
 		idle_completion_delay = cfg.idle_completion_delay,
 		text_change_debounce = cfg.text_changed_debounce,
+		completion_timeout = cfg.completion_timeout,
 		debug_immediate_shutdown = cfg.debug_immediate_shutdown,
 		max_context_tokens = cfg.max_context_tokens,
 		provider_url = cfg.provider_url,
