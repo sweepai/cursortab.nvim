@@ -441,6 +441,11 @@ func handleModifications(deletedLines, insertedLines []string, oldLineStart, new
 			// Use old line numbers so modifications overlay the original content
 			lineNum := oldLineStart + j + 1
 
+			// Skip identical lines - they're not actually changes
+			if deletedLines[j] == insertedLines[j] {
+				continue
+			}
+
 			if deletedLines[j] != "" && insertedLines[j] != "" {
 				diffType, colStart, colEnd := categorizeLineChangeWithColumns(deletedLines[j], insertedLines[j])
 				result.Changes[lineNum] = LineDiff{
@@ -502,6 +507,11 @@ func handleModifications(deletedLines, insertedLines []string, oldLineStart, new
 		// Second pass: Process matched pairs as modifications
 		// Use OLD text coordinates for modifications so they overlay the original content
 		for delIdx, insIdx := range matches {
+			// Skip identical lines - they're not actually changes
+			if deletedLines[delIdx] == insertedLines[insIdx] {
+				continue
+			}
+
 			lineNum := oldLineStart + delIdx + 1
 			diffType, colStart, colEnd := categorizeLineChangeWithColumns(deletedLines[delIdx], insertedLines[insIdx])
 			result.Changes[lineNum] = LineDiff{

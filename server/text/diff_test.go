@@ -1053,6 +1053,52 @@ func TestCursorPositionBeyondBuffer(t *testing.T) {
 	t.Logf("Cursor position: line=%d, col=%d", actual.CursorLine, actual.CursorCol)
 }
 
+func TestIdenticalLineMarkedAsModification(t *testing.T) {
+	// Bug from log: line 11 is marked as "modification" even though content == oldContent
+	// This happens when adding a new line at the end of a file
+	oldText := `def bubble_sort(arr):
+    n = len(arr)
+    for i in range(n):
+        for j in range(0, n - i - 1):
+            if arr[j] > arr[j + 1]:
+                arr[j], arr[j + 1] = arr[j + 1], arr[j]
+    return arr
+
+
+if __name__ == "__main__":
+    arr = [64, 34, 25, 12, 22, 11, 90]`
+
+	newText := `def bubble_sort(arr):
+    n = len(arr)
+    for i in range(n):
+        for j in range(0, n - i - 1):
+            if arr[j] > arr[j + 1]:
+                arr[j], arr[j + 1] = arr[j + 1], arr[j]
+    return arr
+
+
+if __name__ == "__main__":
+    arr = [64, 34, 25, 12, 22, 11, 90]
+    print(bubble_sort(arr))`
+
+	actual := analyzeDiff(oldText, newText)
+
+	// Check that line 11 is NOT in changes (it's identical in both)
+	if change, exists := actual.Changes[11]; exists {
+		if change.Content == change.OldContent {
+			t.Errorf("BUG: Line 11 is marked as %s but content == oldContent (both are %q)",
+				change.Type.String(), change.Content)
+		}
+	}
+
+	// Line 12 should be an addition
+	if change, exists := actual.Changes[12]; !exists {
+		t.Error("Expected line 12 to be an addition")
+	} else if change.Type != LineAddition {
+		t.Errorf("Expected line 12 to be addition, got %s", change.Type.String())
+	}
+}
+
 func TestIfCompletionBug(t *testing.T) {
 	// Reproduce bug: typing "if " and getting completion to "if __name__ == "__main__":"
 	// The preview was showing "if " as deleted instead of showing the completion
