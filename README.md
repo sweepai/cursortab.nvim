@@ -3,6 +3,10 @@
 A Neovim plugin that provides intelligent cursor movement and tab completion.
 Supports multiple AI providers including autocomplete, Sweep, and Zeta models.
 
+<p align="center">
+    <img src="assets/preview.png" width=512></img>
+</p>
+
 > [!WARNING]
 >
 > This plugin is a work in progress, expect bugs and breaking changes.
