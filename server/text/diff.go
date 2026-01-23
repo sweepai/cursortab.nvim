@@ -722,10 +722,6 @@ func abs(x int) int {
 	return x
 }
 
-// generateCursorDiffFormat returns a diff string formatted for Cursor's AI server.
-// Each addition line is formatted as: "<index>+|<content>"
-// Each deletion line is formatted as: "<index>-|<content>"
-// Indices are one-based positions in the new text sequence as changes are applied.
 // ToLuaFormat converts a LineDiff to a Lua-friendly map format
 func (ld LineDiff) ToLuaFormat() map[string]any {
 	luaFormat := map[string]any{
