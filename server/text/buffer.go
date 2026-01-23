@@ -227,6 +227,9 @@ func (b *Buffer) OnCompletionReady(n *nvim.Nvim, startLine, endLineInclusive int
 
 // CommitPendingEdit applies the pending edit to buffer state, increments version,
 // and appends a structured diff entry showing before/after content. No-op if no pending edit.
+//
+// Uses "working diff" pattern: creates diff from checkpoint (originalLines) to final state,
+// capturing both user typing and completion changes since last accept.
 func (b *Buffer) CommitPendingEdit() {
 	if !b.hasPending {
 		return
@@ -236,13 +239,20 @@ func (b *Buffer) CommitPendingEdit() {
 	endLineInclusive := b.pendingEndLineInclusive
 	lines := b.pendingLines
 
-	// Extract the original content (what was in the range before the edit)
-	var originalLines []string
-	for i := startLine; i <= endLineInclusive && i-1 < len(b.Lines); i++ {
-		originalLines = append(originalLines, b.Lines[i-1])
+	// First compute the final buffer state after applying the completion
+	newLines := make([]string, 0, len(b.Lines)-((endLineInclusive-startLine)+1)+len(lines))
+	if startLine-1 > 0 && startLine-1 <= len(b.Lines) {
+		newLines = append(newLines, b.Lines[:startLine-1]...)
 	}
-	originalContent := strings.Join(originalLines, "\n")
-	updatedContent := strings.Join(lines, "\n")
+	newLines = append(newLines, lines...)
+	if endLineInclusive < len(b.Lines) {
+		newLines = append(newLines, b.Lines[endLineInclusive:]...)
+	}
+
+	// Create diff from checkpoint (originalLines) to final state (newLines)
+	// This captures all changes since last accept: user typing + completion
+	originalContent := strings.Join(b.originalLines, "\n")
+	updatedContent := strings.Join(newLines, "\n")
 
 	// Only record diff if there's an actual change
 	if originalContent != updatedContent {
@@ -253,19 +263,13 @@ func (b *Buffer) CommitPendingEdit() {
 		b.DiffHistories = append(b.DiffHistories, diffEntry)
 	}
 
+	// Reset checkpoint to current state for next working diff
+	b.originalLines = make([]string, len(newLines))
+	copy(b.originalLines, newLines)
+
 	// Save current lines as previous state BEFORE updating (for sweep provider)
 	b.PreviousLines = make([]string, len(b.Lines))
 	copy(b.PreviousLines, b.Lines)
-
-	// Compute the new buffer contents
-	newLines := make([]string, 0, len(b.Lines)-((endLineInclusive-startLine)+1)+len(lines))
-	if startLine-1 > 0 && startLine-1 <= len(b.Lines) {
-		newLines = append(newLines, b.Lines[:startLine-1]...)
-	}
-	newLines = append(newLines, lines...)
-	if endLineInclusive < len(b.Lines) {
-		newLines = append(newLines, b.Lines[endLineInclusive:]...)
-	}
 
 	// Commit the new content and bump version
 	b.Lines = make([]string, len(newLines))
@@ -285,6 +289,10 @@ func (b *Buffer) OnCursorPredictionReady(n *nvim.Nvim, line int) {
 }
 
 func (b *Buffer) OnReject(n *nvim.Nvim) {
+	// Clear pending state to prevent stale data from being committed
+	b.hasPending = false
+	b.pendingLines = nil
+
 	logger.Debug("sending to lua on_reject")
 	b.executeLuaFunction(n, `require('cursortab').on_reject()`)
 }
