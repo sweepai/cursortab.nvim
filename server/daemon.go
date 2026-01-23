@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"io"
-	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"cursortab/engine"
+	"cursortab/logger"
 	"cursortab/provider"
 	"cursortab/types"
 
@@ -84,7 +84,7 @@ func (d *Daemon) Start() error {
 	}
 	defer d.cleanup()
 
-	log.Printf("daemon listening on socket: %s", d.socketPath)
+	logger.Info("daemon listening on socket: %s", d.socketPath)
 
 	// Start engine
 	d.engine.Start(d.ctx)
@@ -100,7 +100,7 @@ func (d *Daemon) Start() error {
 
 	// Wait for shutdown
 	<-d.ctx.Done()
-	log.Printf("daemon shutting down...")
+	logger.Info("daemon shutting down...")
 	return nil
 }
 
@@ -122,7 +122,7 @@ func (d *Daemon) setupShutdownHandling() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		log.Printf("received shutdown signal")
+		logger.Info("received shutdown signal")
 		d.Stop()
 	}()
 }
@@ -135,13 +135,13 @@ func (d *Daemon) acceptConnections() {
 			case <-d.ctx.Done():
 				return // Server is shutting down
 			default:
-				log.Printf("error accepting connection: %v", err)
+				logger.Error("error accepting connection: %v", err)
 				continue
 			}
 		}
 
 		atomic.AddInt64(&d.clientCount, 1)
-		log.Printf("new client connected, total clients: %d", atomic.LoadInt64(&d.clientCount))
+		logger.Info("new client connected, total clients: %d", atomic.LoadInt64(&d.clientCount))
 		go d.handleConnection(conn)
 	}
 }
@@ -150,13 +150,13 @@ func (d *Daemon) handleConnection(conn net.Conn) {
 	defer conn.Close()
 	defer func() {
 		atomic.AddInt64(&d.clientCount, -1)
-		log.Printf("client disconnected, remaining clients: %d", atomic.LoadInt64(&d.clientCount))
+		logger.Info("client disconnected, remaining clients: %d", atomic.LoadInt64(&d.clientCount))
 	}()
 
 	// Create Neovim client from the connection
-	n, err := nvim.New(conn, conn, conn, log.Printf)
+	n, err := nvim.New(conn, conn, conn, logger.Debug)
 	if err != nil {
-		log.Printf("error creating nvim client: %v", err)
+		logger.Error("error creating nvim client: %v", err)
 		return
 	}
 
@@ -169,7 +169,7 @@ func (d *Daemon) handleConnection(conn net.Conn) {
 		return
 	default:
 		if err := n.Serve(); err != nil && err != io.EOF {
-			log.Printf("error serving connection: %v", err)
+			logger.Error("error serving connection: %v", err)
 		}
 	}
 }
@@ -186,7 +186,7 @@ func (d *Daemon) monitorIdleShutdown() {
 				return
 			case <-ticker.C:
 				if atomic.LoadInt64(&d.clientCount) == 0 {
-					log.Printf("debug mode: no clients connected, shutting down daemon immediately")
+					logger.Debug("debug mode: no clients connected, shutting down daemon immediately")
 					d.Stop()
 					return
 				}
@@ -203,7 +203,7 @@ func (d *Daemon) monitorIdleShutdown() {
 				return
 			case <-idleTimer.C:
 				if atomic.LoadInt64(&d.clientCount) == 0 {
-					log.Printf("no clients connected for timeout period, shutting down daemon")
+					logger.Info("no clients connected for timeout period, shutting down daemon")
 					d.Stop()
 					return
 				}
@@ -235,13 +235,13 @@ func (d *Daemon) writePidFile() {
 	pid := os.Getpid()
 	err := os.WriteFile(d.pidPath, []byte(strconv.Itoa(pid)), 0644)
 	if err != nil {
-		log.Printf("warning: could not write PID file: %v", err)
+		logger.Warn("could not write PID file: %v", err)
 	}
-	log.Printf("server started with PID %d", pid)
+	logger.Info("server started with PID %d", pid)
 }
 
 func (d *Daemon) removePidFile() {
 	if err := os.Remove(d.pidPath); err != nil && !os.IsNotExist(err) {
-		log.Printf("warning: could not remove PID file: %v", err)
+		logger.Warn("could not remove PID file: %v", err)
 	}
 }

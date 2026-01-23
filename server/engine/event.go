@@ -1,8 +1,8 @@
 package engine
 
 import (
+	"cursortab/logger"
 	"cursortab/types"
-	"log"
 )
 
 type EventType string
@@ -83,17 +83,17 @@ func (e *Engine) handleTextChange() {
 		if matches {
 			if hasRemaining {
 				// Typing matches - Lua already updated the visual, just keep completion state
-				log.Printf("typing matches prediction, keeping completion state")
+				logger.Debug("typing matches prediction, keeping completion state")
 				return
 			}
 			// User typed everything - completion fully typed
-			log.Printf("typing matches prediction, completion fully typed")
+			logger.Debug("typing matches prediction, completion fully typed")
 			e.clearCompletionState()
 			e.state = stateIdle
 			e.startTextChangeTimer()
 			return
 		}
-		log.Printf("typing does not match prediction, rejecting")
+		logger.Debug("typing does not match prediction, rejecting")
 	}
 
 	e.reject()
@@ -242,12 +242,12 @@ func (e *Engine) handleCompletionReady(response *types.CompletionResponse) {
 				e.completionOriginalLines = append(e.completionOriginalLines, e.buffer.Lines[i-1])
 			}
 		} else {
-			log.Printf("no changes to completion")
+			logger.Debug("no changes to completion")
 			e.handleCursorTarget()
 		}
 
 		if len(response.Completions) > 1 {
-			log.Printf("multiple completions: %v", response.Completions)
+			logger.Debug("multiple completions: %v", response.Completions)
 		}
 
 	} else {

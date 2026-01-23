@@ -2,14 +2,16 @@ package engine
 
 import (
 	"context"
-	"cursortab/text"
-	"cursortab/types"
-	"cursortab/utils"
+	"errors"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
+
+	"cursortab/logger"
+	"cursortab/text"
+	"cursortab/types"
+	"cursortab/utils"
 
 	"github.com/neovim/go-client/nvim"
 )
@@ -77,7 +79,7 @@ type Engine struct {
 func NewEngine(provider types.Provider, config EngineConfig) (*Engine, error) {
 	workspacePath, err := os.Getwd()
 	if err != nil {
-		log.Printf("error getting current directory, using home: %v", err)
+		logger.Warn("error getting current directory, using home: %v", err)
 		workspacePath = "~"
 	}
 	workspaceID := fmt.Sprintf("%s-%d", workspacePath, os.Getpid())
@@ -125,7 +127,7 @@ func (e *Engine) Start(ctx context.Context) {
 	e.mu.Unlock()
 
 	go e.eventLoop(e.mainCtx)
-	log.Printf("engine started")
+	logger.Info("engine started")
 }
 
 // Stop gracefully shuts down the engine and cleans up all resources
@@ -134,7 +136,7 @@ func (e *Engine) Stop() {
 		e.mu.Lock()
 		defer e.mu.Unlock()
 
-		log.Printf("stopping engine...")
+		logger.Info("stopping engine...")
 
 		// Mark as stopped to prevent new operations
 		e.stopped = true
@@ -160,7 +162,7 @@ func (e *Engine) Stop() {
 		// Close event channel (this will cause eventLoop to exit if it hasn't already)
 		close(e.eventChan)
 
-		log.Printf("engine stopped")
+		logger.Info("engine stopped")
 	})
 }
 
@@ -180,7 +182,7 @@ func (e *Engine) clearStateUnsafe() {
 func (e *Engine) eventLoop(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("event loop panic recovered: %v", r)
+			logger.Error("event loop panic recovered: %v", r)
 			e.eventLoop(e.mainCtx) // Restart the event loop
 		}
 	}()
@@ -209,7 +211,7 @@ func (e *Engine) eventLoop(ctx context.Context) {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("event handler panic recovered for event %v: %v", event.Type, r)
+						logger.Error("event handler panic recovered for event %v: %v", event.Type, r)
 					}
 				}()
 				e.handleEvent(event)
@@ -227,7 +229,7 @@ func (e *Engine) handleEvent(event Event) {
 		return
 	}
 
-	log.Printf("handle event: %v", event)
+	logger.Debug("handle event: %v", event)
 
 	switch event.Type {
 	case EventEsc:
@@ -249,7 +251,11 @@ func (e *Engine) handleEvent(event Event) {
 	case EventCompletionReady:
 		e.handleCompletionReady(event.Data.(*types.CompletionResponse))
 	case EventCompletionError:
-		log.Printf("completion error: %v", event.Data)
+		if err, ok := event.Data.(error); ok && errors.Is(err, context.Canceled) {
+			logger.Debug("completion canceled: %v", err)
+		} else {
+			logger.Error("completion error: %v", event.Data)
+		}
 	case EventPrefetchReady:
 		resp := event.Data.(*types.CompletionResponse)
 		e.prefetchedCompletions = resp.Completions
@@ -262,7 +268,11 @@ func (e *Engine) handleEvent(event Event) {
 			e.handleDeferredCursorTarget()
 		}
 	case EventPrefetchError:
-		log.Printf("prefetch error: %v", event.Data)
+		if err, ok := event.Data.(error); ok && errors.Is(err, context.Canceled) {
+			logger.Debug("prefetch canceled: %v", err)
+		} else {
+			logger.Error("prefetch error: %v", event.Data)
+		}
 		e.prefetchInProgress = false
 
 		// If we were waiting for prefetch due to tab press, fall back to original logic
@@ -435,7 +445,7 @@ func (e *Engine) handleCursorTarget() {
 func (e *Engine) acceptCompletion() {
 	if e.applyBatch != nil {
 		if err := e.applyBatch.Execute(); err != nil {
-			log.Printf("error applying completion: %v", err)
+			logger.Error("error applying completion: %v", err)
 		}
 	}
 
@@ -551,7 +561,7 @@ func (e *Engine) acceptCursorTarget() {
 
 	err := e.buffer.MoveCursorToStartOfLine(e.n, int(e.cursorTarget.LineNumber), true, true)
 	if err != nil {
-		log.Printf("error moving cursor: %v", err)
+		logger.Error("error moving cursor: %v", err)
 	}
 
 	if e.n != nil {
@@ -568,7 +578,7 @@ func (e *Engine) acceptCursorTarget() {
 		if e.buffer.HasChanges(e.completions[0].StartLine, e.completions[0].EndLineInc, e.completions[0].Lines) {
 			e.applyBatch = e.buffer.OnCompletionReady(e.n, e.completions[0].StartLine, e.completions[0].EndLineInc, e.completions[0].Lines)
 		} else {
-			log.Printf("no changes to completion (prefetched)")
+			logger.Debug("no changes to completion (prefetched)")
 			e.handleCursorTarget()
 		}
 
@@ -609,7 +619,7 @@ func (e *Engine) handleDeferredCursorTarget() {
 		if e.buffer.HasChanges(e.completions[0].StartLine, e.completions[0].EndLineInc, e.completions[0].Lines) {
 			e.applyBatch = e.buffer.OnCompletionReady(e.n, e.completions[0].StartLine, e.completions[0].EndLineInc, e.completions[0].Lines)
 		} else {
-			log.Printf("no changes to completion (deferred prefetched)")
+			logger.Debug("no changes to completion (deferred prefetched)")
 			e.handleCursorTarget()
 		}
 
@@ -659,6 +669,6 @@ func (e *Engine) SetNvim(n *nvim.Nvim) {
 			}
 		}
 	}); err != nil {
-		log.Printf("error registering event handler for new connection: %v", err)
+		logger.Error("error registering event handler for new connection: %v", err)
 	}
 }

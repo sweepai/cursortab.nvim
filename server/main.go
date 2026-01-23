@@ -3,7 +3,6 @@ package main
 import (
 	"cursortab/logger"
 	"encoding/json"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -38,26 +37,24 @@ const (
 func setupLogger(logLevel string) *logger.LimitedLogger {
 	execPath, err := os.Executable()
 	if err != nil {
-		log.Fatalf("error getting executable path: %v", err)
+		logger.Fatal("error getting executable path: %v", err)
 	}
 	execDir := filepath.Dir(execPath)
 	logPath := filepath.Join(execDir, "cursortab.log")
 
 	f, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
-		log.Fatalf("error opening file: %v", err)
+		logger.Fatal("error opening file: %v", err)
 	}
 
 	level := logger.ParseLogLevel(logLevel)
-	limitedLogger := logger.NewLimitedLogger(f, level)
-	log.SetOutput(limitedLogger)
-	return limitedLogger
+	return logger.NewLimitedLogger(f, level)
 }
 
 func getSocketPath() string {
 	execPath, err := os.Executable()
 	if err != nil {
-		log.Fatalf("error getting executable path: %v", err)
+		logger.Fatal("error getting executable path: %v", err)
 	}
 	execDir := filepath.Dir(execPath)
 	return filepath.Join(execDir, "cursortab.sock")
@@ -66,7 +63,7 @@ func getSocketPath() string {
 func getPidPath() string {
 	execPath, err := os.Executable()
 	if err != nil {
-		log.Fatalf("error getting executable path: %v", err)
+		logger.Fatal("error getting executable path: %v", err)
 	}
 	execDir := filepath.Dir(execPath)
 	return filepath.Join(execDir, "cursortab.pid")
@@ -98,32 +95,32 @@ func isDaemonRunning() (bool, int) {
 func loadConfig() Config {
 	var config Config
 	if err := json.Unmarshal([]byte(os.Getenv("CURSORTAB_CONFIG")), &config); err != nil {
-		log.Fatalf("invalid config: %v", err)
+		logger.Fatal("invalid config: %v", err)
 	}
 
-	log.Printf("config: %+v", config)
+	logger.Info("config: %+v", config)
 	return config
 }
 
 func runDaemon() {
+	// Setup logger early with default level
+	ll := setupLogger("info")
+	defer ll.Close()
+
 	config := loadConfig()
 
-	// Default to info level if not specified
-	logLevel := config.LogLevel
-	if logLevel == "" {
-		logLevel = "info"
+	// Update log level based on config
+	if config.LogLevel != "" {
+		logger.SetGlobalLevel(logger.ParseLogLevel(config.LogLevel))
 	}
-
-	logger := setupLogger(logLevel)
-	defer logger.Close()
 
 	daemon, err := NewDaemon(config)
 	if err != nil {
-		log.Fatalf("error creating daemon: %v", err)
+		logger.Fatal("error creating daemon: %v", err)
 	}
 
 	if err := daemon.Start(); err != nil {
-		log.Fatalf("error starting daemon: %v", err)
+		logger.Fatal("error starting daemon: %v", err)
 	}
 }
 
@@ -131,11 +128,11 @@ func runClient() {
 	client := NewClient()
 
 	if err := client.EnsureDaemonRunning(); err != nil {
-		log.Fatalf("error ensuring daemon is running: %v", err)
+		logger.Fatal("error ensuring daemon is running: %v", err)
 	}
 
 	if err := client.Connect(); err != nil {
-		log.Fatalf("error connecting to daemon: %v", err)
+		logger.Fatal("error connecting to daemon: %v", err)
 	}
 }
 

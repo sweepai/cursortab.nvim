@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+// defaultLogger is used before the global logger is initialized
+var defaultLogger = &LimitedLogger{
+	file:      os.Stderr,
+	lineCount: 0,
+	level:     LogLevelInfo,
+}
+
 // MaxLogLines defines the maximum number of lines to keep in the log file
 const MaxLogLines = 5000
 
@@ -86,6 +93,13 @@ func (ll *LimitedLogger) SetLevel(level LogLevel) {
 	ll.level = level
 }
 
+// SetGlobalLevel sets the logging level on the global logger
+func SetGlobalLevel(level LogLevel) {
+	if globalLogger != nil {
+		globalLogger.SetLevel(level)
+	}
+}
+
 // shouldLog returns true if the given level should be logged
 func (ll *LimitedLogger) shouldLog(level LogLevel) bool {
 	return level >= ll.level
@@ -121,28 +135,50 @@ func (ll *LimitedLogger) Error(format string, v ...any) {
 	ll.logWithLevel(LogLevelError, format, v...)
 }
 
-// Package-level logging functions that use the global logger
+// Fatal logs an error message and exits with code 1
+func (ll *LimitedLogger) Fatal(format string, v ...any) {
+	ll.logWithLevel(LogLevelError, format, v...)
+	os.Exit(1)
+}
+
+// Package-level logging functions that use the global logger (or default if not initialized)
 func Debug(format string, v ...any) {
 	if globalLogger != nil {
 		globalLogger.Debug(format, v...)
+	} else {
+		defaultLogger.Debug(format, v...)
 	}
 }
 
 func Info(format string, v ...any) {
 	if globalLogger != nil {
 		globalLogger.Info(format, v...)
+	} else {
+		defaultLogger.Info(format, v...)
 	}
 }
 
 func Warn(format string, v ...any) {
 	if globalLogger != nil {
 		globalLogger.Warn(format, v...)
+	} else {
+		defaultLogger.Warn(format, v...)
 	}
 }
 
 func Error(format string, v ...any) {
 	if globalLogger != nil {
 		globalLogger.Error(format, v...)
+	} else {
+		defaultLogger.Error(format, v...)
+	}
+}
+
+func Fatal(format string, v ...any) {
+	if globalLogger != nil {
+		globalLogger.Fatal(format, v...)
+	} else {
+		defaultLogger.Fatal(format, v...)
 	}
 }
 

@@ -1,9 +1,9 @@
 package main
 
 import (
+	"cursortab/logger"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"time"
@@ -40,7 +40,7 @@ func (c *Client) Connect() error {
 func (c *Client) EnsureDaemonRunning() error {
 	running, pid := isDaemonRunning()
 	if running {
-		log.Printf("daemon already running with PID %d", pid)
+		logger.Debug("daemon already running with PID %d", pid)
 		return nil
 	}
 
@@ -48,7 +48,7 @@ func (c *Client) EnsureDaemonRunning() error {
 }
 
 func (c *Client) startDaemon() error {
-	log.Printf("starting daemon...")
+	logger.Debug("starting daemon...")
 
 	// Start daemon in background
 	cmd := []string{os.Args[0], "--daemon"}
@@ -74,7 +74,7 @@ func (c *Client) startDaemon() error {
 func (c *Client) waitForDaemon() error {
 	for range 50 { // Wait up to 5 seconds
 		if running, _ := isDaemonRunning(); running {
-			log.Printf("daemon started successfully")
+			logger.Debug("daemon started successfully")
 			return nil
 		}
 		time.Sleep(100 * time.Millisecond)

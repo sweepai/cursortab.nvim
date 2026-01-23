@@ -5,7 +5,6 @@ import (
 	"cursortab/types"
 	"encoding/json"
 	"fmt"
-	"log"
 	"path/filepath"
 	"strings"
 
@@ -85,7 +84,7 @@ func (b *Buffer) executeLuaFunction(n *nvim.Nvim, luaCode string, args ...any) {
 		batch.ExecLua(luaCode, nil, nil)
 	}
 	if err := batch.Execute(); err != nil {
-		log.Printf("error executing lua function: %v", err)
+		logger.Error("error executing lua function: %v", err)
 	}
 }
 
@@ -113,7 +112,7 @@ func (b *Buffer) SyncIn(n *nvim.Nvim, workspacePath string) {
 	`, &scrollOffset, nil)
 
 	if err := batch.Execute(); err != nil {
-		log.Printf("error executing sync batch: %v", err)
+		logger.Error("error executing sync batch: %v", err)
 		return
 	}
 
@@ -339,7 +338,7 @@ func (b *Buffer) GetLinterErrors(n *nvim.Nvim) *LinterErrors {
 	`, int(b.id), int(b.id)), &hasLsp, nil)
 
 	if err := batch.Execute(); err != nil {
-		log.Printf("error checking LSP availability: %v", err)
+		logger.Error("error checking LSP availability: %v", err)
 		return nil
 	}
 
@@ -364,7 +363,7 @@ func (b *Buffer) GetLinterErrors(n *nvim.Nvim) *LinterErrors {
 	batch.BufferLines(b.id, 0, -1, false, &bufferContents)
 
 	if err := batch.Execute(); err != nil {
-		log.Printf("error getting linter errors: %v", err)
+		logger.Error("error getting linter errors: %v", err)
 		return nil
 	}
 
