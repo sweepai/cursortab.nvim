@@ -66,14 +66,16 @@ require("cursortab").setup({
   },
 
   -- CONTEXT OPTIONS
-  max_context_tokens = 2048,         -- Max tokens for content around cursor (0 = no limit)
+  -- Controls window size around cursor. For sweep/zeta, also controls max generation tokens
+  -- since these providers regenerate the entire window.
+  max_context_tokens = 2048,         -- Max tokens for content window (0 = no limit)
   max_diff_history_tokens = 512,     -- Max tokens for diff history (0 = no limit)
 
-  -- PROVIDER OPTIONS (applied to all providers: autocomplete, sweep, zeta)
+  -- PROVIDER OPTIONS
   provider_url = "http://localhost:8000",  -- URL of the provider server
   provider_model = "autocomplete",         -- Model name
   provider_temperature = 0.0,              -- Sampling temperature
-  provider_max_tokens = 256,               -- Max tokens to generate
+  provider_max_tokens = 256,               -- Max tokens to generate (autocomplete only)
   provider_top_k = 50,                     -- Top-k sampling
 })
 ```

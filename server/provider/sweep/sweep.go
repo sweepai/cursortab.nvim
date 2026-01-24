@@ -15,13 +15,13 @@ import (
 
 // Provider implements the types.Provider interface for Sweep Next-Edit model
 // Uses the Qwen2.5-Coder pretrained format with <|file_sep|> tokens
+// Note: Generation limit uses config.MaxTokens (max_context_tokens) since Sweep regenerates the entire window
 type Provider struct {
 	config      *types.ProviderConfig
 	httpClient  *http.Client
 	url         string
 	model       string
 	temperature float64
-	maxTokens   int
 }
 
 // completionRequest matches the OpenAI Completion API format
@@ -66,7 +66,6 @@ func NewProvider(config *types.ProviderConfig) (*Provider, error) {
 		url:         config.ProviderURL,
 		model:       config.ProviderModel,
 		temperature: config.ProviderTemperature,
-		maxTokens:   config.ProviderMaxTokens,
 	}, nil
 }
 
@@ -77,11 +76,12 @@ func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionReque
 	prompt, windowStart, windowEnd := p.buildPrompt(req)
 
 	// Create the completion request
+	// Sweep regenerates the entire window, so max_tokens must match max_context_tokens
 	completionReq := completionRequest{
 		Model:       p.model,
 		Prompt:      prompt,
 		Temperature: p.temperature,
-		MaxTokens:   p.maxTokens,
+		MaxTokens:   p.config.MaxTokens,
 		Stop:        []string{"<|file_sep|>", "</s>"},
 		N:           1,
 		Echo:        false,

@@ -59,15 +59,17 @@ local default_config = {
 		dist_threshold = 2, -- Lines apart to trigger staging (0 to disable)
 	},
 
-	-- Provider Options (applied to all providers: autocomplete, sweep, zeta)
+	-- Provider Options
 	provider_url = "http://localhost:8000", -- URL of the provider server
 	provider_model = "autocomplete", -- Model name (e.g., "autocomplete", "sweep-next-edit-1.5b", "zeta")
 	provider_temperature = 0.0, -- Sampling temperature
-	provider_max_tokens = 256, -- Max tokens to generate
+	provider_max_tokens = 256, -- Max tokens to generate (autocomplete only, sweep/zeta use max_context_tokens)
 	provider_top_k = 50, -- Top-k sampling (used by some providers)
 
 	-- Context Options
-	max_context_tokens = 2048, -- Max tokens for content around cursor (0 = no limit)
+	-- max_context_tokens: Controls window size around cursor AND generation limit for sweep/zeta
+	-- (autocomplete generates single lines so uses provider_max_tokens instead)
+	max_context_tokens = 2048, -- Max tokens for content window (0 = no limit)
 	max_diff_history_tokens = 512, -- Max tokens for diff history (0 = no limit)
 
 	-- INTERNAL

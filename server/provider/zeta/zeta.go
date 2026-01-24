@@ -14,13 +14,13 @@ import (
 )
 
 // Provider implements the types.Provider interface for Zeta (vLLM with OpenAI-style API)
+// Note: Generation limit uses config.MaxTokens (max_context_tokens) since Zeta regenerates the editable region
 type Provider struct {
 	config      *types.ProviderConfig
 	httpClient  *http.Client
 	url         string
 	model       string
 	temperature float64
-	maxTokens   int
 }
 
 // completionRequest matches the OpenAI Completion API format used by vLLM
@@ -65,7 +65,6 @@ func NewProvider(config *types.ProviderConfig) (*Provider, error) {
 		url:         config.ProviderURL,
 		model:       config.ProviderModel,
 		temperature: config.ProviderTemperature,
-		maxTokens:   config.ProviderMaxTokens,
 	}, nil
 }
 
@@ -86,11 +85,12 @@ func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionReque
 	prompt := p.buildInstructionPrompt(userEdits, diagnosticsText, userExcerpt)
 
 	// Create the completion request
+	// Zeta regenerates the editable region, so max_tokens must match max_context_tokens
 	completionReq := completionRequest{
 		Model:       p.model,
 		Prompt:      prompt,
 		Temperature: p.temperature,
-		MaxTokens:   p.maxTokens,
+		MaxTokens:   p.config.MaxTokens,
 		Stop:        []string{"\n<|editable_region_end|>"},
 		N:           1,
 		Echo:        false,
