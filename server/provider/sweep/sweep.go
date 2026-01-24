@@ -1,15 +1,12 @@
 package sweep
 
 import (
-	"bytes"
 	"context"
+	"cursortab/client/openai"
 	"cursortab/logger"
 	"cursortab/types"
 	"cursortab/utils"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 )
 
@@ -18,40 +15,9 @@ import (
 // Note: Generation limit uses config.MaxTokens (max_context_tokens) since Sweep regenerates the entire window
 type Provider struct {
 	config      *types.ProviderConfig
-	httpClient  *http.Client
-	url         string
+	client      *openai.Client
 	model       string
 	temperature float64
-}
-
-// completionRequest matches the OpenAI Completion API format
-type completionRequest struct {
-	Model       string   `json:"model"`
-	Prompt      string   `json:"prompt"`
-	Temperature float64  `json:"temperature"`
-	MaxTokens   int      `json:"max_tokens"`
-	Stop        []string `json:"stop,omitempty"`
-	N           int      `json:"n"`
-	Echo        bool     `json:"echo"`
-}
-
-// completionResponse matches the OpenAI Completion API response format
-type completionResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Index        int    `json:"index"`
-		Text         string `json:"text"`
-		Logprobs     any    `json:"logprobs"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
 }
 
 // NewProvider creates a new Sweep provider instance
@@ -62,8 +28,7 @@ func NewProvider(config *types.ProviderConfig) (*Provider, error) {
 
 	return &Provider{
 		config:      config,
-		httpClient:  &http.Client{},
-		url:         config.ProviderURL,
+		client:      openai.NewClient(config.ProviderURL),
 		model:       config.ProviderModel,
 		temperature: config.ProviderTemperature,
 	}, nil
@@ -71,13 +36,17 @@ func NewProvider(config *types.ProviderConfig) (*Provider, error) {
 
 // GetCompletion implements types.Provider.GetCompletion for Sweep
 // Uses the Sweep Next-Edit format with <|file_sep|> tokens
+// Uses streaming to enable early cancellation when enough lines are received
 func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionRequest) (*types.CompletionResponse, error) {
 	// Build the prompt in Sweep's format (also returns window bounds for parseCompletion)
 	prompt, windowStart, windowEnd := p.buildPrompt(req)
 
-	// Create the completion request
+	// Calculate max lines to receive (context window size)
+	maxLines := windowEnd - windowStart
+
+	// Create the completion request with streaming enabled
 	// Sweep regenerates the entire window, so max_tokens must match max_context_tokens
-	completionReq := completionRequest{
+	completionReq := &openai.CompletionRequest{
 		Model:       p.model,
 		Prompt:      prompt,
 		Temperature: p.temperature,
@@ -87,80 +56,28 @@ func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionReque
 		Echo:        false,
 	}
 
-	// Marshal the request without HTML escaping
-	var reqBodyBuf bytes.Buffer
-	encoder := json.NewEncoder(&reqBodyBuf)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(completionReq); err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-	reqBody := reqBodyBuf.Bytes()
-
 	// Debug logging for request
-	logger.Debug("sweep provider request to %s:\n  Model: %s\n  Temperature: %.2f\n  MaxTokens: %d\n  Prompt length: %d chars\n  Prompt:\n%s",
-		p.url+"/v1/completions",
+	logger.Debug("sweep provider request to %s:\n  Model: %s\n  Temperature: %.2f\n  MaxTokens: %d\n  MaxLines: %d\n  Prompt length: %d chars\n  Prompt:\n%s",
+		p.client.URL+"/v1/completions",
 		completionReq.Model,
 		completionReq.Temperature,
 		completionReq.MaxTokens,
+		maxLines,
 		len(prompt),
 		prompt)
 
-	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.url+"/v1/completions", bytes.NewReader(reqBody))
+	// Send streaming request with line limit
+	result, err := p.client.DoStreamingCompletion(ctx, completionReq, maxLines)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Send the request
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check status code
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Parse the response
-	var completionResp completionResponse
-	if err := json.Unmarshal(body, &completionResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, err
 	}
 
 	// Debug logging for response
-	logger.Debug("sweep provider response:\n  ID: %s\n  Model: %s\n  Choices: %d\n  Usage: prompt=%d, completion=%d, total=%d",
-		completionResp.ID,
-		completionResp.Model,
-		len(completionResp.Choices),
-		completionResp.Usage.PromptTokens,
-		completionResp.Usage.CompletionTokens,
-		completionResp.Usage.TotalTokens)
-
-	// Check if we got any completions
-	if len(completionResp.Choices) == 0 {
-		logger.Debug("sweep provider returned no completions")
-		return &types.CompletionResponse{
-			Completions:  []*types.Completion{},
-			CursorTarget: nil,
-		}, nil
-	}
-
-	// Extract the completion text (this is the predicted updated content)
-	completionText := completionResp.Choices[0].Text
-	logger.Debug("sweep completion text (%d chars):\n%s", len(completionText), completionText)
+	logger.Debug("sweep provider streaming response:\n  Text length: %d chars\n  FinishReason: %s\n  StoppedEarly: %v",
+		len(result.Text), result.FinishReason, result.StoppedEarly)
 
 	// If the completion is empty or just whitespace, return empty response
-	if strings.TrimSpace(completionText) == "" {
+	if strings.TrimSpace(result.Text) == "" {
 		logger.Debug("sweep completion text is empty after trimming")
 		return &types.CompletionResponse{
 			Completions:  []*types.Completion{},
@@ -168,9 +85,16 @@ func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionReque
 		}, nil
 	}
 
+	logger.Debug("sweep completion text (%d chars):\n%s", len(result.Text), result.Text)
+
+	// If we stopped early due to line limit, treat as "length" finish reason for truncation handling
+	finishReason := result.FinishReason
+	if result.StoppedEarly {
+		finishReason = "length"
+	}
+
 	// Parse the completion into a result (pass window bounds from buildPrompt)
-	finishReason := completionResp.Choices[0].FinishReason
-	completion := p.parseCompletion(req, completionText, finishReason, windowStart, windowEnd)
+	completion := p.parseCompletion(req, result.Text, finishReason, windowStart, windowEnd)
 	if completion == nil {
 		logger.Debug("sweep parseCompletion returned nil (no changes detected)")
 		return &types.CompletionResponse{

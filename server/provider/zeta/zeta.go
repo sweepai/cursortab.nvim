@@ -1,15 +1,12 @@
 package zeta
 
 import (
-	"bytes"
 	"context"
+	"cursortab/client/openai"
 	"cursortab/logger"
 	"cursortab/types"
 	"cursortab/utils"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 )
 
@@ -17,40 +14,9 @@ import (
 // Note: Generation limit uses config.MaxTokens (max_context_tokens) since Zeta regenerates the editable region
 type Provider struct {
 	config      *types.ProviderConfig
-	httpClient  *http.Client
-	url         string
+	client      *openai.Client
 	model       string
 	temperature float64
-}
-
-// completionRequest matches the OpenAI Completion API format used by vLLM
-type completionRequest struct {
-	Model       string   `json:"model"`
-	Prompt      string   `json:"prompt"`
-	Temperature float64  `json:"temperature"`
-	MaxTokens   int      `json:"max_tokens"`
-	Stop        []string `json:"stop,omitempty"`
-	N           int      `json:"n"`
-	Echo        bool     `json:"echo"`
-}
-
-// completionResponse matches the OpenAI Completion API response format
-type completionResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Index        int    `json:"index"`
-		Text         string `json:"text"`
-		Logprobs     any    `json:"logprobs"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
 }
 
 // NewProvider creates a new Zeta provider instance
@@ -61,8 +27,7 @@ func NewProvider(config *types.ProviderConfig) (*Provider, error) {
 
 	return &Provider{
 		config:      config,
-		httpClient:  &http.Client{},
-		url:         config.ProviderURL,
+		client:      openai.NewClient(config.ProviderURL),
 		model:       config.ProviderModel,
 		temperature: config.ProviderTemperature,
 	}, nil
@@ -70,9 +35,10 @@ func NewProvider(config *types.ProviderConfig) (*Provider, error) {
 
 // GetCompletion implements types.Provider.GetCompletion for Zeta
 // This provider supports multi-line completions using special tokens
+// Uses streaming to enable early cancellation when enough lines are received
 func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionRequest) (*types.CompletionResponse, error) {
 	// Build the user excerpt with special tokens
-	userExcerpt := p.buildPromptWithSpecialTokens(req)
+	userExcerpt, editableStart, editableEnd := p.buildPromptWithSpecialTokens(req)
 
 	// Build the user edits from diff history
 	userEdits := p.buildUserEditsFromDiffHistory(req)
@@ -84,9 +50,12 @@ func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionReque
 	// Extended format includes diagnostics section
 	prompt := p.buildInstructionPrompt(userEdits, diagnosticsText, userExcerpt)
 
+	// Calculate max lines to receive (editable region size)
+	maxLines := editableEnd - editableStart
+
 	// Create the completion request
 	// Zeta regenerates the editable region, so max_tokens must match max_context_tokens
-	completionReq := completionRequest{
+	completionReq := &openai.CompletionRequest{
 		Model:       p.model,
 		Prompt:      prompt,
 		Temperature: p.temperature,
@@ -96,80 +65,28 @@ func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionReque
 		Echo:        false,
 	}
 
-	// Marshal the request without HTML escaping
-	var reqBodyBuf bytes.Buffer
-	encoder := json.NewEncoder(&reqBodyBuf)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(completionReq); err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-	reqBody := reqBodyBuf.Bytes()
-
 	// Debug logging for request
-	logger.Debug("zeta provider request to %s:\n  Model: %s\n  Temperature: %.2f\n  MaxTokens: %d\n  Prompt length: %d chars\n  Prompt:\n%s",
-		p.url+"/v1/completions",
+	logger.Debug("zeta provider request to %s:\n  Model: %s\n  Temperature: %.2f\n  MaxTokens: %d\n  MaxLines: %d\n  Prompt length: %d chars\n  Prompt:\n%s",
+		p.client.URL+"/v1/completions",
 		completionReq.Model,
 		completionReq.Temperature,
 		completionReq.MaxTokens,
+		maxLines,
 		len(prompt),
 		prompt)
 
-	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.url+"/v1/completions", bytes.NewReader(reqBody))
+	// Send streaming request with line limit
+	result, err := p.client.DoStreamingCompletion(ctx, completionReq, maxLines)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Send the request
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check status code
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Read the response body for debugging
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Parse the response
-	var completionResp completionResponse
-	if err := json.Unmarshal(body, &completionResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, err
 	}
 
 	// Debug logging for response
-	logger.Debug("zeta provider response:\n  ID: %s\n  Model: %s\n  Choices: %d\n  Usage: prompt=%d, completion=%d, total=%d",
-		completionResp.ID,
-		completionResp.Model,
-		len(completionResp.Choices),
-		completionResp.Usage.PromptTokens,
-		completionResp.Usage.CompletionTokens,
-		completionResp.Usage.TotalTokens)
-
-	// Check if we got any completions
-	if len(completionResp.Choices) == 0 {
-		logger.Debug("zeta provider returned no completions")
-		return &types.CompletionResponse{
-			Completions:  []*types.Completion{},
-			CursorTarget: nil,
-		}, nil
-	}
-
-	// Extract the completion text
-	completionText := completionResp.Choices[0].Text
-	logger.Debug("zeta completion text (%d chars):\n%s", len(completionText), completionText)
+	logger.Debug("zeta provider streaming response:\n  Text length: %d chars\n  FinishReason: %s\n  StoppedEarly: %v",
+		len(result.Text), result.FinishReason, result.StoppedEarly)
 
 	// If the completion is empty or just whitespace, return empty response
-	if strings.TrimSpace(completionText) == "" {
+	if strings.TrimSpace(result.Text) == "" {
 		logger.Debug("zeta completion text is empty after trimming")
 		return &types.CompletionResponse{
 			Completions:  []*types.Completion{},
@@ -177,9 +94,16 @@ func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionReque
 		}, nil
 	}
 
+	logger.Debug("zeta completion text (%d chars):\n%s", len(result.Text), result.Text)
+
+	// If we stopped early due to line limit, treat as "length" finish reason for truncation handling
+	finishReason := result.FinishReason
+	if result.StoppedEarly {
+		finishReason = "length"
+	}
+
 	// Parse the completion into lines and build the result
-	finishReason := completionResp.Choices[0].FinishReason
-	completion := p.parseCompletion(req, completionText, finishReason)
+	completion := p.parseCompletion(req, result.Text, finishReason, editableStart, editableEnd)
 	if completion == nil {
 		logger.Debug("zeta parseCompletion returned nil (no changes detected)")
 		return &types.CompletionResponse{
@@ -342,14 +266,15 @@ func (p *Provider) buildInstructionPrompt(userEdits, diagnostics, userExcerpt st
 
 // buildPromptWithSpecialTokens constructs the prompt with special tokens matching Zed's format
 // Uses max_context_tokens to limit the editable region size
-func (p *Provider) buildPromptWithSpecialTokens(req *types.CompletionRequest) string {
+// Returns: (prompt, editableStart, editableEnd) where bounds are 0-indexed line numbers
+func (p *Provider) buildPromptWithSpecialTokens(req *types.CompletionRequest) (string, int, int) {
 	var promptBuilder strings.Builder
 
 	if len(req.Lines) == 0 {
 		promptBuilder.WriteString("```")
 		promptBuilder.WriteString(req.FilePath)
 		promptBuilder.WriteString("\n<|start_of_file|>\n<|editable_region_start|>\n<|user_cursor_is_here|>\n<|editable_region_end|>\n```")
-		return promptBuilder.String()
+		return promptBuilder.String(), 0, 0
 	}
 
 	cursorRow := req.CursorRow // 1-indexed
@@ -359,14 +284,10 @@ func (p *Provider) buildPromptWithSpecialTokens(req *types.CompletionRequest) st
 	cursorLine := cursorRow - 1
 
 	// Use token-based trimming for editable region
-	_, _, _, trimOffset := utils.TrimContentAroundCursor(
+	trimmedLines, _, _, trimOffset := utils.TrimContentAroundCursor(
 		req.Lines, cursorLine, cursorCol, p.config.MaxTokens)
 
 	// Calculate editable region bounds from trim result
-	// Re-run to get the actual trimmed lines count
-	trimmedLines, _, _, _ := utils.TrimContentAroundCursor(
-		req.Lines, cursorLine, cursorCol, p.config.MaxTokens)
-
 	editableStart := trimOffset
 	editableEnd := trimOffset + len(trimmedLines)
 
@@ -438,12 +359,13 @@ func (p *Provider) buildPromptWithSpecialTokens(req *types.CompletionRequest) st
 	// Close the code fence (newline before the closing ```)
 	promptBuilder.WriteString("\n```")
 
-	return promptBuilder.String()
+	return promptBuilder.String(), editableStart, editableEnd
 }
 
 // parseCompletion parses the model's completion text matching Zed's parsing logic
 // finishReason indicates why the model stopped: "stop" (hit stop token) or "length" (hit max_tokens)
-func (p *Provider) parseCompletion(req *types.CompletionRequest, completionText string, finishReason string) *types.Completion {
+// editableStart and editableEnd are 0-indexed line bounds
+func (p *Provider) parseCompletion(req *types.CompletionRequest, completionText string, finishReason string, editableStart, editableEnd int) *types.Completion {
 	// Remove cursor markers
 	content := strings.ReplaceAll(completionText, "<|user_cursor_is_here|>", "")
 
@@ -454,7 +376,7 @@ func (p *Provider) parseCompletion(req *types.CompletionRequest, completionText 
 	// Find the start marker
 	startIdx := strings.Index(content, startMarker)
 	if startIdx == -1 {
-		return p.parseSimpleCompletion(req, completionText, finishReason)
+		return p.parseSimpleCompletion(req, completionText, finishReason, editableStart, editableEnd)
 	}
 
 	// Slice from the start marker position onward
@@ -476,13 +398,6 @@ func (p *Provider) parseCompletion(req *types.CompletionRequest, completionText 
 	} else {
 		newText = content[:endIdx]
 	}
-
-	// Calculate the editable region that was sent in the prompt (same as buildPromptWithSpecialTokens)
-	cursorRow := req.CursorRow - 1 // Convert to 0-indexed
-	trimmedLines, _, _, trimOffset := utils.TrimContentAroundCursor(
-		req.Lines, cursorRow, req.CursorCol, p.config.MaxTokens)
-	editableStart := trimOffset
-	editableEnd := trimOffset + len(trimmedLines)
 
 	// Get the old text of the editable region
 	oldLines := req.Lines[editableStart:editableEnd]
@@ -524,7 +439,7 @@ func (p *Provider) parseCompletion(req *types.CompletionRequest, completionText 
 
 // parseSimpleCompletion is a fallback parser for when markers aren't found
 // finishReason indicates why the model stopped: "stop" (hit stop token) or "length" (hit max_tokens)
-func (p *Provider) parseSimpleCompletion(req *types.CompletionRequest, completionText string, finishReason string) *types.Completion {
+func (p *Provider) parseSimpleCompletion(req *types.CompletionRequest, completionText string, finishReason string, _, _ int) *types.Completion {
 	// Split into lines
 	completionLines := strings.Split(completionText, "\n")
 
@@ -587,4 +502,3 @@ func (p *Provider) parseSimpleCompletion(req *types.CompletionRequest, completio
 		Lines:      resultLines,
 	}
 }
-

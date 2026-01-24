@@ -69,34 +69,33 @@ type Event struct {
 	Data any
 }
 
-func (e *Engine) handleEsc() {
-	e.reject()
-	e.stopIdleTimer()
-}
-
-func (e *Engine) handleTextChange() {
-	// If we have an active completion, check if the user typed content that matches the prediction
-	// Lua handles the visual update locally; we just need to detect match vs mismatch here
-	if e.state == stateHasCompletion && len(e.completions) > 0 && e.n != nil {
-		e.buffer.SyncIn(e.n, e.WorkspacePath)
-
-		matches, hasRemaining := e.checkTypingMatchesPrediction()
-		if matches {
-			if hasRemaining {
-				// Typing matches - Lua already updated the visual, just keep completion state
-				logger.Debug("typing matches prediction, keeping completion state")
-				return
-			}
-			// User typed everything - completion fully typed
-			logger.Debug("typing matches prediction, completion fully typed")
-			e.clearCompletionState()
-			e.state = stateIdle
-			e.startTextChangeTimer()
-			return
-		}
-		logger.Debug("typing does not match prediction, rejecting")
+// handleTextChangeImpl handles text change when we have an active completion.
+// It checks if the user typed content that matches the prediction.
+func (e *Engine) handleTextChangeImpl() {
+	if len(e.completions) == 0 || e.n == nil {
+		e.reject()
+		e.startTextChangeTimer()
+		return
 	}
 
+	e.buffer.SyncIn(e.n, e.WorkspacePath)
+
+	matches, hasRemaining := e.checkTypingMatchesPrediction()
+	if matches {
+		if hasRemaining {
+			// Typing matches - Lua already updated the visual, just keep completion state
+			logger.Debug("typing matches prediction, keeping completion state")
+			return
+		}
+		// User typed everything - completion fully typed
+		logger.Debug("typing matches prediction, completion fully typed")
+		e.clearAll()
+		e.state = stateIdle
+		e.startTextChangeTimer()
+		return
+	}
+
+	logger.Debug("typing does not match prediction, rejecting")
 	e.reject()
 	e.startTextChangeTimer()
 }
@@ -186,44 +185,8 @@ func (e *Engine) checkTypingMatchesPrediction() (bool, bool) {
 	return true, hasRemaining
 }
 
-func (e *Engine) handleTextChangeTimeout() {
-	e.requestCompletion(types.CompletionSourceTyping)
-}
-
-func (e *Engine) handleCursorMoveNormal() {
-	e.reject()
-	e.resetIdleTimer()
-}
-
-func (e *Engine) handleInsertEnter() {
-	e.stopIdleTimer()
-}
-
-func (e *Engine) handleInsertLeave() {
-	e.reject()
-	e.startIdleTimer()
-}
-
-func (e *Engine) handleTab() {
-	if e.n == nil {
-		return
-	}
-
-	switch e.state {
-	case stateHasCompletion:
-		e.acceptCompletion()
-	case stateHasCursorTarget:
-		e.acceptCursorTarget()
-	}
-}
-
-func (e *Engine) handleIdleTimeout() {
-	if e.state == stateIdle {
-		e.requestCompletion(types.CompletionSourceIdle)
-	}
-}
-
-func (e *Engine) handleCompletionReady(response *types.CompletionResponse) {
+// handleCompletionReadyImpl contains the actual completion handling logic
+func (e *Engine) handleCompletionReadyImpl(response *types.CompletionResponse) {
 	if e.n == nil {
 		return
 	}
@@ -284,6 +247,16 @@ func (e *Engine) handleCompletionReady(response *types.CompletionResponse) {
 			e.completionOriginalLines = nil
 			for i := completion.StartLine; i <= completion.EndLineInc && i-1 < len(e.buffer.Lines); i++ {
 				e.completionOriginalLines = append(e.completionOriginalLines, e.buffer.Lines[i-1])
+			}
+
+			// If auto_advance is enabled and provider didn't return a cursor target,
+			// create one pointing to the last line with retrigger enabled
+			if e.cursorTarget == nil && e.config.CursorPrediction.AutoAdvance && e.config.CursorPrediction.Enabled {
+				e.cursorTarget = &types.CursorPredictionTarget{
+					RelativePath:    e.buffer.Path,
+					LineNumber:      int32(completion.EndLineInc),
+					ShouldRetrigger: true,
+				}
 			}
 		} else {
 			// NO CHANGES - handle no-op case

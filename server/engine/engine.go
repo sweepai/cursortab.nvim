@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"cursortab/logger"
@@ -74,11 +76,9 @@ type Engine struct {
 	completionOriginalLines []string
 
 	// Prefetch state
-	prefetchedCompletions              []*types.Completion
-	prefetchedCursorTarget             *types.CursorPredictionTarget
-	prefetchInProgress                 bool
-	waitingForPrefetchOnTab            bool
-	waitingForPrefetchCursorPrediction bool // Wait for prefetch to show cursor prediction (last stage, cursor on target)
+	prefetchedCompletions  []*types.Completion
+	prefetchedCursorTarget *types.CursorPredictionTarget
+	prefetchState          prefetchState
 
 	// Config options
 	config EngineConfig
@@ -117,11 +117,10 @@ func NewEngine(provider types.Provider, config EngineConfig) (*Engine, error) {
 		mu:                      sync.RWMutex{},
 		completions:             nil,
 		cursorTarget:            nil,
-		prefetchedCompletions:   nil,
-		prefetchedCursorTarget:  nil,
-		prefetchInProgress:      false,
-		waitingForPrefetchOnTab: false,
-		stopped:                 false,
+		prefetchedCompletions:  nil,
+		prefetchedCursorTarget: nil,
+		prefetchState:          prefetchNone,
+		stopped:                false,
 		fileDiffStore:           make(map[string][]*types.DiffEntry),
 	}, nil
 }
@@ -168,8 +167,16 @@ func (e *Engine) Stop() {
 		e.stopIdleTimer()
 		// Stop text change timer
 		e.stopTextChangeTimer()
-		// Clear any pending completions/predictions
-		e.clearStateUnsafe()
+		// Clear any pending completions/predictions (without calling OnReject since we're stopping)
+		e.state = stateIdle
+		e.cursorTarget = nil
+		e.completions = nil
+		e.applyBatch = nil
+		e.stagedCompletion = nil
+		e.prefetchedCompletions = nil
+		e.prefetchedCursorTarget = nil
+		e.prefetchState = prefetchNone
+		e.completionOriginalLines = nil
 		// Close event channel (this will cause eventLoop to exit if it hasn't already)
 		close(e.eventChan)
 
@@ -177,25 +184,70 @@ func (e *Engine) Stop() {
 	})
 }
 
-// clearStateUnsafe clears engine state without locking (internal use)
-func (e *Engine) clearStateUnsafe() {
-	e.state = stateIdle
+// ClearOptions configures what to clear in clearState
+type ClearOptions struct {
+	CancelCurrent     bool
+	CancelPrefetch    bool
+	ClearStaged       bool // Clear staged completion state (set false when advancing stages)
+	ClearCursorTarget bool
+	CallOnReject      bool
+}
+
+// clearState consolidates all state clearing into one method with configurable options
+func (e *Engine) clearState(opts ClearOptions) {
+	if opts.CancelCurrent && e.currentCancel != nil {
+		e.currentCancel()
+		e.currentCancel = nil
+	}
+	if opts.CancelPrefetch && e.prefetchCancel != nil {
+		e.prefetchCancel()
+		e.prefetchCancel = nil
+		e.prefetchState = prefetchNone
+		e.prefetchedCompletions = nil
+		e.prefetchedCursorTarget = nil
+	}
+	if opts.ClearCursorTarget {
+		e.cursorTarget = nil
+	}
+	if opts.CallOnReject && e.n != nil {
+		e.buffer.OnReject(e.n)
+	}
 	e.completions = nil
 	e.applyBatch = nil
-	e.cursorTarget = nil
-	e.stagedCompletion = nil
-	e.prefetchedCompletions = nil
-	e.prefetchedCursorTarget = nil
-	e.prefetchInProgress = false
-	e.waitingForPrefetchOnTab = false
+	if opts.ClearStaged {
+		e.stagedCompletion = nil
+	}
 	e.completionOriginalLines = nil
 }
+
+// clearAll clears everything including prefetch and staged completions
+func (e *Engine) clearAll() {
+	e.clearState(ClearOptions{CancelCurrent: true, CancelPrefetch: true, ClearStaged: true, ClearCursorTarget: true, CallOnReject: true})
+}
+
+// clearKeepPrefetch clears current completion but keeps prefetch data, staged completion state, and cursor target
+func (e *Engine) clearKeepPrefetch() {
+	e.clearState(ClearOptions{CancelCurrent: true, CancelPrefetch: false, ClearStaged: false, ClearCursorTarget: false, CallOnReject: true})
+}
+
+// eventLoopRestarts tracks the number of event loop restarts for panic recovery
+var eventLoopRestarts atomic.Int32
+
+const maxEventLoopRestarts = 3
 
 func (e *Engine) eventLoop(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Error("event loop panic recovered: %v", r)
-			e.eventLoop(e.mainCtx) // Restart the event loop
+			restarts := eventLoopRestarts.Add(1)
+			logger.Error("event loop panic [%d/%d]: %v\n%s",
+				restarts, maxEventLoopRestarts, r, debug.Stack())
+
+			if int(restarts) < maxEventLoopRestarts {
+				e.eventLoop(e.mainCtx) // Restart the event loop
+			} else {
+				logger.Error("max event loop restarts reached, stopping engine")
+				go e.Stop() // async to avoid deadlock
+			}
 		}
 	}()
 
@@ -241,127 +293,77 @@ func (e *Engine) handleEvent(event Event) {
 		return
 	}
 
-	logger.Debug("handle event: %v", event)
+	logger.Debug("handle event: %v (state=%s)", event.Type, e.state)
 
+	// Layer 1: Background/async results
+	if e.handleBackgroundEvent(event) {
+		return
+	}
+
+	// Layer 2: Dispatch table for user/timer events
+	e.dispatch(event)
+}
+
+// handleBackgroundEvent handles async completion and prefetch results.
+// Returns true if the event was handled, false if it should be dispatched.
+func (e *Engine) handleBackgroundEvent(event Event) bool {
 	switch event.Type {
-	case EventEsc:
-		e.handleEsc()
-	case EventTextChanged:
-		e.handleTextChange()
-	case EventTextChangeTimeout:
-		e.handleTextChangeTimeout()
-	case EventCursorMovedNormal:
-		e.handleCursorMoveNormal()
-	case EventInsertEnter:
-		e.handleInsertEnter()
-	case EventInsertLeave:
-		e.handleInsertLeave()
-	case EventTab:
-		e.handleTab()
-	case EventIdleTimeout:
-		e.handleIdleTimeout()
 	case EventCompletionReady:
-		e.handleCompletionReady(event.Data.(*types.CompletionResponse))
+		if e.state != statePendingCompletion {
+			logger.Debug("ignoring stale completion: state=%v", e.state)
+			return true
+		}
+		e.handleCompletionReadyImpl(event.Data.(*types.CompletionResponse))
+		return true
+
 	case EventCompletionError:
 		if err, ok := event.Data.(error); ok && errors.Is(err, context.Canceled) {
 			logger.Debug("completion canceled: %v", err)
 		} else {
 			logger.Error("completion error: %v", event.Data)
 		}
+		return true
+
 	case EventPrefetchReady:
-		resp := event.Data.(*types.CompletionResponse)
-		e.prefetchedCompletions = resp.Completions
-		e.prefetchedCursorTarget = resp.CursorTarget
-		e.prefetchInProgress = false
-
-		// If we were waiting for prefetch due to tab press, continue with cursor target logic
-		if e.waitingForPrefetchOnTab {
-			e.waitingForPrefetchOnTab = false
-			e.handleDeferredCursorTarget()
+		// Guard: only process if we're expecting prefetch results
+		if e.prefetchState != prefetchInFlight &&
+			e.prefetchState != prefetchWaitingForTab &&
+			e.prefetchState != prefetchWaitingForCursorPrediction {
+			logger.Debug("ignoring stale prefetch: prefetchState=%v", e.prefetchState)
+			return true
 		}
+		e.handlePrefetchReady(event.Data.(*types.CompletionResponse))
+		return true
 
-		// If we were waiting for prefetch to show cursor prediction (last stage case),
-		// show cursor prediction to the first line that actually changes
-		if e.waitingForPrefetchCursorPrediction {
-			e.waitingForPrefetchCursorPrediction = false
-			if len(e.prefetchedCompletions) > 0 && e.n != nil {
-				comp := e.prefetchedCompletions[0]
-				// Extract old lines from buffer for the completion range
-				var oldLines []string
-				for i := comp.StartLine; i <= comp.EndLineInc && i-1 < len(e.buffer.Lines); i++ {
-					oldLines = append(oldLines, e.buffer.Lines[i-1])
-				}
-				// Find the first line that actually differs (baseOffset = StartLine - 1)
-				targetLine := text.FindFirstChangedLine(oldLines, comp.Lines, comp.StartLine-1)
-				// Only show if we found a changed line and cursor is not already on that line
-				if targetLine > 0 && e.buffer.Row != targetLine {
-					e.cursorTarget = &types.CursorPredictionTarget{
-						RelativePath:    e.buffer.Path,
-						LineNumber:      int32(targetLine),
-						ShouldRetrigger: false, // Will use prefetched data
-					}
-					e.state = stateHasCursorTarget
-					e.buffer.OnCursorPredictionReady(e.n, targetLine)
-				}
-			}
-		}
 	case EventPrefetchError:
-		if err, ok := event.Data.(error); ok && errors.Is(err, context.Canceled) {
-			logger.Debug("prefetch canceled: %v", err)
+		// Guard: only process if we're expecting prefetch results
+		if e.prefetchState != prefetchInFlight &&
+			e.prefetchState != prefetchWaitingForTab &&
+			e.prefetchState != prefetchWaitingForCursorPrediction {
+			logger.Debug("ignoring stale prefetch error: prefetchState=%v", e.prefetchState)
+			return true
+		}
+		// Nil-safe error handling
+		if err, ok := event.Data.(error); ok {
+			e.handlePrefetchError(err)
 		} else {
-			logger.Error("prefetch error: %v", event.Data)
+			e.handlePrefetchError(nil)
 		}
-		e.prefetchInProgress = false
-
-		// If we were waiting for prefetch due to tab press, fall back to original logic
-		if e.waitingForPrefetchOnTab {
-			e.waitingForPrefetchOnTab = false
-			e.handleDeferredCursorTarget()
-		}
+		return true
 	}
+	return false
 }
 
-func (e *Engine) clearCompletionState() {
-	if e.currentCancel != nil {
-		e.currentCancel()
-		e.currentCancel = nil
-	}
-	if e.prefetchCancel != nil {
-		e.prefetchCancel()
-		e.prefetchCancel = nil
-	}
-	if e.n != nil {
-		e.buffer.OnReject(e.n)
-	}
-	e.completions = nil
-	e.applyBatch = nil
-	e.stagedCompletion = nil
-	e.prefetchedCompletions = nil
-	e.prefetchedCursorTarget = nil
-	e.prefetchInProgress = false
-	e.waitingForPrefetchOnTab = false
-	e.waitingForPrefetchCursorPrediction = false
-	e.completionOriginalLines = nil
-}
-
-// clearCompletionStateExceptPrefetch clears the currently completion without affecting prefetched data
-func (e *Engine) clearCompletionStateExceptPrefetch() {
-	if e.currentCancel != nil {
-		e.currentCancel()
-		e.currentCancel = nil
-	}
-	if e.n != nil {
-		e.buffer.OnReject(e.n)
-	}
-	e.completions = nil
-	e.applyBatch = nil
-	e.completionOriginalLines = nil
-}
 
 func (e *Engine) reject() {
-	e.clearCompletionState()
+	e.clearState(ClearOptions{
+		CancelCurrent:     true,
+		CancelPrefetch:    true,
+		ClearStaged:       true,
+		ClearCursorTarget: true,
+		CallOnReject:      true,
+	})
 	e.state = stateIdle
-	e.cursorTarget = nil
 }
 
 func (e *Engine) requestCompletion(source types.CompletionSource) {
@@ -408,109 +410,52 @@ func (e *Engine) requestCompletion(source types.CompletionSource) {
 	}()
 }
 
-// requestPrefetch requests a completion for a specific cursor position without changing the engine state
-func (e *Engine) requestPrefetch(source types.CompletionSource, overrideRow int, overrideCol int) {
-	if e.stopped || e.n == nil {
-		return
-	}
-
-	// Cancel existing prefetch if any
-	if e.prefetchCancel != nil {
-		e.prefetchCancel()
-		e.prefetchCancel = nil
-		e.prefetchInProgress = false
-	}
-
-	// Sync buffer to ensure latest context
-	e.buffer.SyncIn(e.n, e.WorkspacePath)
-
-	ctx, cancel := context.WithTimeout(e.mainCtx, e.config.CompletionTimeout)
-	e.prefetchCancel = cancel
-	e.prefetchInProgress = true
-
-	// Snapshot required values to avoid races with buffer mutation
-	lines := append([]string{}, e.buffer.Lines...)
-	previousLines := append([]string{}, e.buffer.PreviousLines...)
-	version := e.buffer.Version
-	// legacy per-file diff history removed in favor of multi-file store
-	filePath := e.buffer.Path
-	linterErrors := e.buffer.GetProviderLinterErrors(e.n)
-
-	go func() {
-		defer cancel()
-
-		result, err := e.provider.GetCompletion(ctx, &types.CompletionRequest{
-			Source:            source,
-			WorkspacePath:     e.WorkspacePath,
-			WorkspaceID:       e.WorkspaceID,
-			FilePath:          filePath,
-			Lines:             lines,
-			Version:           version,
-			PreviousLines:     previousLines,
-			FileDiffHistories: e.getAllFileDiffHistories(),
-			CursorRow:         overrideRow,
-			CursorCol:         overrideCol,
-			LinterErrors:      linterErrors,
-		})
-
-		if err != nil {
-			select {
-			case e.eventChan <- Event{Type: EventPrefetchError, Data: err}:
-			case <-e.mainCtx.Done():
-			}
-			return
-		}
-
-		select {
-		case e.eventChan <- Event{Type: EventPrefetchReady, Data: result}:
-		case <-e.mainCtx.Done():
-		}
-	}()
-}
-
 func (e *Engine) handleCursorTarget() {
 	if !e.config.CursorPrediction.Enabled {
 		e.clearCompletionUIOnly()
 		return
 	}
 
-	if e.cursorTarget != nil && e.cursorTarget.LineNumber >= 1 {
-		// Don't show cursor prediction if cursor is already on the target line
-		if e.buffer.Row == int(e.cursorTarget.LineNumber) {
-			// If prefetch is in progress, wait for it to show cursor prediction
-			// This handles the case where we're at the last stage and need to
-			// show the cursor prediction for the next completion
-			if e.prefetchInProgress {
-				e.waitingForPrefetchCursorPrediction = true
-			}
-			e.clearCompletionUIOnly()
+	if e.cursorTarget == nil || e.cursorTarget.LineNumber < 1 {
+		e.clearCompletionUIOnly()
+		return
+	}
+
+	distance := abs(int(e.cursorTarget.LineNumber) - e.buffer.Row)
+	if distance <= e.config.CursorPrediction.DistThreshold {
+		// Close enough - don't show cursor prediction
+		// If prefetch is ready, show completion immediately
+		if e.prefetchState == prefetchReady && e.tryShowPrefetchedCompletion() {
 			return
 		}
-
-		e.state = stateHasCursorTarget
-		e.buffer.OnCursorPredictionReady(e.n, int(e.cursorTarget.LineNumber))
-	} else {
+		// If prefetch is in flight, wait for it
+		if e.prefetchState == prefetchInFlight {
+			e.prefetchState = prefetchWaitingForCursorPrediction
+		}
+		// Go idle (no cursor prediction needed when close)
 		e.clearCompletionUIOnly()
+		return
 	}
+
+	// Far away - show cursor prediction to the target line
+	e.state = stateHasCursorTarget
+	e.buffer.OnCursorPredictionReady(e.n, int(e.cursorTarget.LineNumber))
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // clearCompletionUIOnly clears completion state but preserves prefetch.
 // This is used when transitioning out of cursor target state without
 // wanting to cancel an in-flight prefetch.
 // NOTE: This does NOT call OnReject because it's expected that
-// clearCompletionStateExceptPrefetch() was already called before this,
-// which handles the UI clearing.
+// clearKeepPrefetch() was already called before this, which handles the UI clearing.
 func (e *Engine) clearCompletionUIOnly() {
-	if e.currentCancel != nil {
-		e.currentCancel()
-		e.currentCancel = nil
-	}
-	// NOTE: Don't cancel prefetch - it may still be useful
-	// NOTE: Don't call OnReject - it was already called by clearCompletionStateExceptPrefetch()
-	e.completions = nil
-	e.applyBatch = nil
-	e.stagedCompletion = nil
-	e.completionOriginalLines = nil
+	e.clearState(ClearOptions{CancelCurrent: true, CancelPrefetch: false, ClearStaged: true, CallOnReject: false})
 	e.state = stateIdle
 	e.cursorTarget = nil
 }
@@ -536,7 +481,7 @@ func (e *Engine) acceptCompletion() {
 		e.trimFileDiffStoreToMaxFiles(2)
 	}
 
-	e.clearCompletionStateExceptPrefetch()
+	e.clearKeepPrefetch()
 
 	// Handle staged completions: if there are more stages, show cursor target to next stage
 	if e.stagedCompletion != nil {
@@ -544,6 +489,18 @@ func (e *Engine) acceptCompletion() {
 		if e.stagedCompletion.CurrentIdx < len(e.stagedCompletion.Stages) {
 			// More stages remaining - sync buffer and show cursor target to next stage
 			e.buffer.SyncIn(e.n, e.WorkspacePath)
+
+			// At n-1 stage (one stage remaining), trigger prefetch early so it has
+			// fresh context and time to complete before the last stage is accepted.
+			// Use stage n's StartLine as context position (where the user will be looking).
+			if e.stagedCompletion.CurrentIdx == len(e.stagedCompletion.Stages)-1 {
+				lastStage := e.stagedCompletion.Stages[len(e.stagedCompletion.Stages)-1]
+				if lastStage.CursorTarget != nil && lastStage.CursorTarget.ShouldRetrigger && lastStage.Completion != nil {
+					overrideRow := max(1, lastStage.Completion.StartLine)
+					e.requestPrefetch(types.CompletionSourceTyping, overrideRow, 0)
+				}
+			}
+
 			e.handleCursorTarget() // Shows jump indicator to next stage
 			return
 		}
@@ -552,11 +509,12 @@ func (e *Engine) acceptCompletion() {
 		e.stagedCompletion = nil
 	}
 
-	// Prefetch next completion if cursor target requests retrigger (after applying current completion)
-	if e.cursorTarget != nil && e.cursorTarget.ShouldRetrigger {
-		// Sync buffer to get the updated state after applying completion
-		e.buffer.SyncIn(e.n, e.WorkspacePath)
+	// Sync buffer to get the updated state after applying completion
+	e.buffer.SyncIn(e.n, e.WorkspacePath)
 
+	// Prefetch next completion if cursor target requests retrigger (after applying current completion)
+	// Skip if prefetch is already in flight (e.g., triggered at n-1 stage)
+	if e.cursorTarget != nil && e.cursorTarget.ShouldRetrigger && e.prefetchState == prefetchNone {
 		// Prefetch targeting the predicted cursor line
 		overrideRow := max(1, int(e.cursorTarget.LineNumber))
 		e.requestPrefetch(types.CompletionSourceTyping, overrideRow, 0)
@@ -662,43 +620,14 @@ func (e *Engine) acceptCursorTarget() {
 		return
 	}
 
-	if len(e.prefetchedCompletions) > 0 {
-		// Sync buffer to get updated cursor position after move
-		e.buffer.SyncIn(e.n, e.WorkspacePath)
-
-		e.state = stateHasCompletion
-		e.completions = e.prefetchedCompletions
-
-		// Use prefetched cursor target, or create one with retrigger if auto_advance enabled
-		// This ensures we continue fetching if there are more changes beyond this completion
-		if e.prefetchedCursorTarget != nil {
-			e.cursorTarget = e.prefetchedCursorTarget
-		} else if e.config.CursorPrediction.AutoAdvance && e.config.CursorPrediction.Enabled {
-			e.cursorTarget = &types.CursorPredictionTarget{
-				RelativePath:    e.buffer.Path,
-				LineNumber:      int32(e.completions[0].EndLineInc),
-				ShouldRetrigger: true,
-			}
-		} else {
-			e.cursorTarget = nil
-		}
-
-		e.prefetchedCompletions = nil
-		e.prefetchedCursorTarget = nil
-
-		if e.buffer.HasChanges(e.completions[0].StartLine, e.completions[0].EndLineInc, e.completions[0].Lines) {
-			e.applyBatch = e.buffer.OnCompletionReady(e.n, e.completions[0].StartLine, e.completions[0].EndLineInc, e.completions[0].Lines)
-		} else {
-			logger.Debug("no changes to completion (prefetched)")
-			e.handleCursorTarget()
-		}
-
+	// Try to use prefetched completion
+	if e.usePrefetchedCompletion() {
 		return
 	}
 
 	// If prefetch is in progress, wait for it to complete instead of triggering new request
-	if e.prefetchInProgress {
-		e.waitingForPrefetchOnTab = true
+	if e.prefetchState == prefetchInFlight {
+		e.prefetchState = prefetchWaitingForTab
 		return
 	}
 
@@ -737,58 +666,6 @@ func (e *Engine) showCurrentStage() {
 	for i := stage.Completion.StartLine; i <= stage.Completion.EndLineInc && i-1 < len(e.buffer.Lines); i++ {
 		e.completionOriginalLines = append(e.completionOriginalLines, e.buffer.Lines[i-1])
 	}
-}
-
-// handleDeferredCursorTarget handles cursor target logic that was deferred due to prefetch in progress
-func (e *Engine) handleDeferredCursorTarget() {
-	if e.n == nil || e.cursorTarget == nil {
-		return
-	}
-
-	// Check if we now have prefetched completions
-	if len(e.prefetchedCompletions) > 0 {
-		// Sync buffer to get updated cursor position
-		e.buffer.SyncIn(e.n, e.WorkspacePath)
-
-		e.state = stateHasCompletion
-		e.completions = e.prefetchedCompletions
-
-		// Use prefetched cursor target, or create one with retrigger if auto_advance enabled
-		if e.prefetchedCursorTarget != nil {
-			e.cursorTarget = e.prefetchedCursorTarget
-		} else if e.config.CursorPrediction.AutoAdvance && e.config.CursorPrediction.Enabled {
-			e.cursorTarget = &types.CursorPredictionTarget{
-				RelativePath:    e.buffer.Path,
-				LineNumber:      int32(e.completions[0].EndLineInc),
-				ShouldRetrigger: true,
-			}
-		} else {
-			e.cursorTarget = nil
-		}
-
-		e.prefetchedCompletions = nil
-		e.prefetchedCursorTarget = nil
-
-		if e.buffer.HasChanges(e.completions[0].StartLine, e.completions[0].EndLineInc, e.completions[0].Lines) {
-			e.applyBatch = e.buffer.OnCompletionReady(e.n, e.completions[0].StartLine, e.completions[0].EndLineInc, e.completions[0].Lines)
-		} else {
-			logger.Debug("no changes to completion (deferred prefetched)")
-			e.handleCursorTarget()
-		}
-
-		return
-	}
-
-	// Fall back to original behavior - trigger new completion if needed
-	if e.cursorTarget.ShouldRetrigger {
-		e.requestCompletion(types.CompletionSourceTyping)
-		e.state = stateIdle
-		e.cursorTarget = nil
-		return
-	}
-
-	e.state = stateIdle
-	e.cursorTarget = nil
 }
 
 // SetNvim sets a new nvim instance for the engine (used for socket connections)

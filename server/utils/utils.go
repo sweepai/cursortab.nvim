@@ -62,38 +62,51 @@ func TrimContentAroundCursor(lines []string, cursorRow, cursorCol, maxTokens int
 		return lines, cursorRow, cursorCol, 0
 	}
 
-	// Calculate how many lines we can keep around the cursor
-	targetChars := maxChars
+	// Balanced approach: allocate half budget before cursor, half after
+	// This ensures we see context both above AND below the cursor
+	cursorLineChars := len(lines[cursorRow]) + 1
+	remainingBudget := maxChars - cursorLineChars
+	halfBudget := remainingBudget / 2
 
-	// Start from cursor line and expand outward
+	// Expand BEFORE cursor (up to half budget)
 	startLine := cursorRow
-	endLine := cursorRow
-	currentChars := len(lines[cursorRow]) + 1
-
-	// Expand around cursor position while staying within token limit
-	for currentChars < targetChars && (startLine > 0 || endLine < len(lines)-1) {
-		// Try expanding up first
-		if startLine > 0 {
-			newChars := len(lines[startLine-1]) + 1
-			if currentChars+newChars <= targetChars {
-				startLine--
-				currentChars += newChars
-			}
-		}
-
-		// Then try expanding down
-		if endLine < len(lines)-1 && currentChars < targetChars {
-			newChars := len(lines[endLine+1]) + 1
-			if currentChars+newChars <= targetChars {
-				endLine++
-				currentChars += newChars
-			}
-		}
-
-		// If we can't expand in either direction, break
-		if (startLine == 0 || currentChars+len(lines[startLine-1])+1 > targetChars) &&
-			(endLine == len(lines)-1 || currentChars+len(lines[endLine+1])+1 > targetChars) {
+	charsBefore := 0
+	for startLine > 0 && charsBefore < halfBudget {
+		newChars := len(lines[startLine-1]) + 1
+		if charsBefore+newChars <= halfBudget {
+			startLine--
+			charsBefore += newChars
+		} else {
 			break
+		}
+	}
+
+	// Expand AFTER cursor (up to half budget + any unused from before)
+	unusedBefore := halfBudget - charsBefore
+	budgetAfter := halfBudget + unusedBefore
+	endLine := cursorRow
+	charsAfter := 0
+	for endLine < len(lines)-1 && charsAfter < budgetAfter {
+		newChars := len(lines[endLine+1]) + 1
+		if charsAfter+newChars <= budgetAfter {
+			endLine++
+			charsAfter += newChars
+		} else {
+			break
+		}
+	}
+
+	// If we have unused budget after expanding down, try expanding up more
+	unusedAfter := budgetAfter - charsAfter
+	if unusedAfter > 0 {
+		for startLine > 0 {
+			newChars := len(lines[startLine-1]) + 1
+			if charsBefore+newChars <= halfBudget+unusedAfter {
+				startLine--
+				charsBefore += newChars
+			} else {
+				break
+			}
 		}
 	}
 

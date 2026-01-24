@@ -278,11 +278,16 @@ func calculateCursorPosition(result *DiffResult, newText string) {
 		}
 	}
 
-	// Set cursor position
-	if targetLine > 0 && targetLine <= len(newLines) {
-		result.CursorLine = targetLine
-		// Position at end of the target line (targetLine-1 is always valid given the check above)
-		result.CursorCol = len(newLines[targetLine-1])
+	// Set cursor position (clamp to valid range if targetLine exceeds newLines length)
+	if targetLine > 0 {
+		if targetLine > len(newLines) {
+			targetLine = len(newLines)
+		}
+		if targetLine > 0 {
+			result.CursorLine = targetLine
+			// Position at end of the target line
+			result.CursorCol = len(newLines[targetLine-1])
+		}
 	}
 }
 
