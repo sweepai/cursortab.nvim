@@ -270,25 +270,36 @@ func (b *Buffer) OnCompletionReady(n *nvim.Nvim, startLine, endLineInclusive int
 
 // OnCompletionReadyWithGroups shows a completion with optional pre-computed visual groups
 func (b *Buffer) OnCompletionReadyWithGroups(n *nvim.Nvim, startLine, endLineInclusive int, lines []string, visualGroups []*types.VisualGroup) *nvim.Batch {
-	diffResult := b.getDiffResult(startLine, endLineInclusive, lines)
-	applyBatch := b.getApplyBatch(n, startLine, endLineInclusive, lines, diffResult)
+	var diffResult *DiffResult
 
-	// If no visual groups provided, compute them from the diff
-	if visualGroups == nil && len(diffResult.Changes) > 0 {
-		// Extract original lines for modification comparison
-		var originalLines []string
-		for i := startLine; i <= endLineInclusive && i-1 < len(b.Lines); i++ {
-			originalLines = append(originalLines, b.Lines[i-1])
-		}
-		visualGroups = computeVisualGroups(diffResult.Changes, lines, originalLines)
-	}
-
-	// Transform visual groups into grouped LineDiff entries
-	// This converts consecutive changes into modification_group/addition_group types
-	// that Lua already knows how to render
 	if len(visualGroups) > 0 {
-		applyVisualGroupsToDiffResult(diffResult, visualGroups, lines)
+		// When visual groups are pre-computed from staging, create the diff result
+		// directly from them. DO NOT recompute a fresh diff because:
+		// 1. Staging already analyzed the diff with consistent coordinates
+		// 2. A fresh diff may have different coordinate mappings (especially with reordering)
+		// 3. Mixing staging's visual groups with a fresh diff causes render overlaps
+		oldLineCount := endLineInclusive - startLine + 1
+		diffResult = createDiffResultFromVisualGroups(visualGroups, lines, oldLineCount)
+	} else {
+		// No pre-computed visual groups - compute fresh diff
+		diffResult = b.getDiffResult(startLine, endLineInclusive, lines)
+
+		// Compute visual groups from the fresh diff
+		if len(diffResult.Changes) > 0 {
+			var originalLines []string
+			for i := startLine; i <= endLineInclusive && i-1 < len(b.Lines); i++ {
+				originalLines = append(originalLines, b.Lines[i-1])
+			}
+			visualGroups = computeVisualGroups(diffResult.Changes, lines, originalLines)
+
+			// Transform visual groups into grouped LineDiff entries
+			if len(visualGroups) > 0 {
+				applyVisualGroupsToDiffResult(diffResult, visualGroups, lines)
+			}
+		}
 	}
+
+	applyBatch := b.getApplyBatch(n, startLine, endLineInclusive, lines, diffResult)
 
 	// Convert diffResult to Lua format with additional context fields
 	luaDiffResult := diffResult.ToLuaFormat(

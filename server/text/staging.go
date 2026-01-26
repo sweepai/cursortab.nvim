@@ -534,15 +534,23 @@ func computeVisualGroups(changes map[int]LineDiff, newLines, oldLines []string) 
 	for _, ln := range lineNumbers {
 		change := changes[ln]
 
-		// Only group modifications and additions
+		// Determine group type for this change
 		var groupType string
 		switch change.Type {
-		case LineModification, LineModificationGroup:
+		case LineModification, LineModificationGroup, LineAppendChars, LineDeleteChars, LineReplaceChars:
+			// All modification-like changes (including character-level changes)
 			groupType = "modification"
 		case LineAddition, LineAdditionGroup:
 			groupType = "addition"
+		case LineDeletion:
+			// Flush and skip pure deletions (they remove lines, don't add content)
+			if current != nil {
+				groups = append(groups, current)
+				current = nil
+			}
+			continue
 		default:
-			// Flush and skip non-groupable changes
+			// Unknown type - flush and skip
 			if current != nil {
 				groups = append(groups, current)
 				current = nil
@@ -584,4 +592,151 @@ func computeVisualGroups(changes map[int]LineDiff, newLines, oldLines []string) 
 	}
 
 	return groups
+}
+
+// createDiffResultFromVisualGroups creates a DiffResult directly from pre-computed visual groups.
+// This is used when staging has already computed visual groups with consistent coordinates.
+// By creating the diff result from visual groups (rather than recomputing a fresh diff),
+// we avoid coordinate mismatches that cause overlapping renders.
+//
+// oldLineCount is the number of lines in the original buffer range being replaced.
+// This is needed to correctly set OldLineNum for modifications when the line counts differ
+// (e.g., 1 old line becoming 3 new lines - all modifications should reference old line 1).
+func createDiffResultFromVisualGroups(visualGroups []*types.VisualGroup, newLines []string, oldLineCount int) *DiffResult {
+	diffResult := &DiffResult{
+		Changes:              make(map[int]LineDiff),
+		IsOnlyLineDeletion:   false,
+		LastDeletion:         -1,
+		LastAddition:         -1,
+		LastLineModification: -1,
+		LastAppendChars:      -1,
+		LastDeleteChars:      -1,
+		LastReplaceChars:     -1,
+		CursorLine:           -1,
+		CursorCol:            -1,
+	}
+
+	lastChangeLine := -1
+	lastChangeCol := 0
+
+	for _, vg := range visualGroups {
+		// Validate visual group bounds
+		if vg.StartLine < 1 || vg.StartLine > len(newLines) {
+			continue
+		}
+		if vg.EndLine < vg.StartLine || vg.EndLine > len(newLines) {
+			continue
+		}
+
+		// Determine group type and create LineDiff entry
+		var diffType DiffType
+		isGroup := vg.EndLine > vg.StartLine
+
+		if vg.Type == "modification" {
+			if isGroup {
+				diffType = LineModificationGroup
+			} else {
+				diffType = LineModification
+			}
+			if vg.EndLine > diffResult.LastLineModification {
+				diffResult.LastLineModification = vg.EndLine
+			}
+		} else if vg.Type == "addition" {
+			if isGroup {
+				diffType = LineAdditionGroup
+			} else {
+				diffType = LineAddition
+			}
+			if vg.EndLine > diffResult.LastAddition {
+				diffResult.LastAddition = vg.EndLine
+			}
+		} else {
+			continue
+		}
+
+		// Collect lines for this visual group
+		var groupLines []string
+		if isGroup {
+			for lineNum := vg.StartLine; lineNum <= vg.EndLine && lineNum-1 < len(newLines); lineNum++ {
+				groupLines = append(groupLines, newLines[lineNum-1])
+			}
+		}
+
+		// Calculate max offset for modification groups (max width of old lines)
+		maxOffset := 0
+		if diffType == LineModificationGroup {
+			for _, oldLine := range vg.OldLines {
+				if len(oldLine) > maxOffset {
+					maxOffset = len(oldLine)
+				}
+			}
+		}
+
+		// Get content and old content for the line
+		content := ""
+		oldContent := ""
+		if vg.StartLine-1 < len(newLines) {
+			content = newLines[vg.StartLine-1]
+		}
+		if len(vg.OldLines) > 0 {
+			oldContent = vg.OldLines[0]
+		}
+
+		// Determine OldLineNum: for modifications, we need to map to the actual old line.
+		// When oldLineCount == newLineCount, it's a 1:1 mapping (old line N → new line N).
+		// When oldLineCount < newLineCount (expansion), modifications are clamped to the
+		// available old lines. For example, if 1 old line becomes 3 new lines, a modification
+		// at new line 2 should still reference old line 1.
+		// For additions, there's no corresponding old line, so leave it as 0.
+		// This is critical for Lua rendering which uses OldLineNum to calculate buffer positions.
+		oldLineNum := 0
+		if vg.Type == "modification" {
+			if oldLineCount > 0 && oldLineCount == len(newLines) {
+				// Equal line counts: 1:1 mapping
+				oldLineNum = vg.StartLine
+			} else if oldLineCount > 0 {
+				// Unequal counts: clamp to available old lines
+				// Modifications are typically at the beginning of the range
+				oldLineNum = min(vg.StartLine, oldLineCount)
+			} else {
+				// Fallback: assume 1:1 mapping
+				oldLineNum = vg.StartLine
+			}
+		}
+
+		// Create the LineDiff entry
+		lineDiff := LineDiff{
+			Type:       diffType,
+			LineNumber: vg.StartLine,
+			OldLineNum: oldLineNum,
+			NewLineNum: vg.StartLine,
+			Content:    content,
+			OldContent: oldContent,
+		}
+
+		if isGroup {
+			lineDiff.GroupLines = groupLines
+			lineDiff.StartLine = vg.StartLine
+			lineDiff.EndLine = vg.EndLine
+			lineDiff.MaxOffset = maxOffset
+		}
+
+		diffResult.Changes[vg.StartLine] = lineDiff
+
+		// Track last change for cursor positioning
+		if vg.EndLine > lastChangeLine {
+			lastChangeLine = vg.EndLine
+			if vg.EndLine-1 < len(newLines) {
+				lastChangeCol = len(newLines[vg.EndLine-1])
+			}
+		}
+	}
+
+	// Set cursor position at the end of the last change
+	if lastChangeLine > 0 {
+		diffResult.CursorLine = lastChangeLine
+		diffResult.CursorCol = lastChangeCol
+	}
+
+	return diffResult
 }

@@ -558,10 +558,12 @@ func handleModificationsWithMapping(deletedLines, insertedLines []string,
 			continue
 		}
 		newIdx := newLineStart + i
-		// Anchor to nearest mapped old line
+		// Anchor to the first deleted line position (1-indexed) so that additions
+		// have the same buffer line as their related modifications during viewport
+		// partitioning. This ensures delete+insert blocks stay grouped together.
 		anchorOld := -1
-		if oldLineStart > 0 {
-			anchorOld = oldLineStart
+		if oldLineStart >= 0 {
+			anchorOld = oldLineStart + 1 // Use 1-indexed position of first deleted line
 		}
 		result.addAddition(anchorOld, newIdx+1, insertedLine)
 	}
