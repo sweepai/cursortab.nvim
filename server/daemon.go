@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -14,7 +15,10 @@ import (
 	"cursortab/buffer"
 	"cursortab/engine"
 	"cursortab/logger"
-	"cursortab/provider"
+	"cursortab/provider/fim"
+	"cursortab/provider/inline"
+	"cursortab/provider/sweep"
+	"cursortab/provider/zeta"
 	"cursortab/types"
 
 	"github.com/neovim/go-client/nvim"
@@ -35,18 +39,26 @@ type Daemon struct {
 }
 
 func NewDaemon(config Config) (*Daemon, error) {
-	prov, err := provider.NewProvider(
-		types.ProviderType(config.Provider.Type),
-		&types.ProviderConfig{
-			ProviderURL:         config.Provider.URL,
-			ProviderModel:       config.Provider.Model,
-			ProviderTemperature: config.Provider.Temperature,
-			ProviderMaxTokens:   config.Provider.MaxTokens,
-			ProviderTopK:        config.Provider.TopK,
-		},
-	)
-	if err != nil {
-		return nil, err
+	providerConfig := &types.ProviderConfig{
+		ProviderURL:         config.Provider.URL,
+		ProviderModel:       config.Provider.Model,
+		ProviderTemperature: config.Provider.Temperature,
+		ProviderMaxTokens:   config.Provider.MaxTokens,
+		ProviderTopK:        config.Provider.TopK,
+	}
+
+	var prov engine.Provider
+	switch types.ProviderType(config.Provider.Type) {
+	case types.ProviderTypeInline:
+		prov = inline.NewProvider(providerConfig)
+	case types.ProviderTypeFIM:
+		prov = fim.NewProvider(providerConfig)
+	case types.ProviderTypeSweep:
+		prov = sweep.NewProvider(providerConfig)
+	case types.ProviderTypeZeta:
+		prov = zeta.NewProvider(providerConfig)
+	default:
+		return nil, fmt.Errorf("unsupported provider type: %s", config.Provider.Type)
 	}
 
 	buf := buffer.New(buffer.Config{
