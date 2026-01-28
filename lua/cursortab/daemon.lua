@@ -195,6 +195,12 @@ function daemon.send_reject()
 	end
 end
 
+-- Send event immediately without debouncing (for critical events like insert_leave)
+---@param event_name string
+function daemon.send_event_immediate(event_name)
+	send_rpc_event(event_name)
+end
+
 -- Check daemon process status
 function daemon.check_daemon_status()
 	local plugin_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")

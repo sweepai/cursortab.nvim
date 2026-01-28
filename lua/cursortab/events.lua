@@ -44,7 +44,7 @@ end
 -- Escape key handler
 ---@return string
 local function on_escape()
-	daemon.send_event("esc")
+	daemon.send_event_immediate("esc")
 	return "\27"
 end
 
@@ -131,7 +131,8 @@ function events.setup()
 			if ui.has_cursor_prediction() or ui.has_completion() then
 				ui.ensure_close_all()
 			end
-			daemon.send_event("insert_leave")
+			-- Send immediately without debounce - critical for committing user edits
+			daemon.send_event_immediate("insert_leave")
 		end,
 	})
 

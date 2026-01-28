@@ -351,6 +351,47 @@ func (b *NvimBuffer) CommitPending() {
 	b.hasPending = false
 }
 
+// CommitUserEdits extracts diffs between originalLines checkpoint and current lines,
+// appends them to diffHistories, and resets the checkpoint.
+// Call this when leaving insert mode to capture manual edits.
+// Returns true if any changes were committed, false if no changes.
+func (b *NvimBuffer) CommitUserEdits() bool {
+	// Quick check: if lengths differ, there are changes
+	if len(b.lines) != len(b.originalLines) {
+		return b.commitUserEditsInternal()
+	}
+
+	// Check for content differences
+	for i := range b.lines {
+		if b.lines[i] != b.originalLines[i] {
+			return b.commitUserEditsInternal()
+		}
+	}
+
+	return false // No changes
+}
+
+func (b *NvimBuffer) commitUserEditsInternal() bool {
+	// Extract granular diffs between checkpoint and current state
+	diffEntries := extractGranularDiffs(b.originalLines, b.lines)
+	if len(diffEntries) == 0 {
+		return false
+	}
+
+	b.diffHistories = append(b.diffHistories, diffEntries...)
+
+	// Save checkpoint as previous state (for sweep provider)
+	b.previousLines = make([]string, len(b.originalLines))
+	copy(b.previousLines, b.originalLines)
+
+	// Reset checkpoint to current state
+	b.originalLines = make([]string, len(b.lines))
+	copy(b.originalLines, b.lines)
+
+	b.version++
+	return true
+}
+
 // ShowCursorTarget displays a cursor prediction indicator at the given line
 func (b *NvimBuffer) ShowCursorTarget(line int) error {
 	if b.client == nil {

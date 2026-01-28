@@ -120,6 +120,15 @@ func (e *Engine) dispatch(event Event) bool {
 	if t.Action != nil {
 		t.Action(e, event)
 	}
+
+	// Post-dispatch hook: InsertLeave always commits uncommitted user edits
+	if event.Type == EventInsertLeave {
+		e.syncBuffer()
+		if e.buffer.CommitUserEdits() {
+			e.saveCurrentFileState()
+		}
+	}
+
 	return true
 }
 

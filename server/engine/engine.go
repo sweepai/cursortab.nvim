@@ -34,6 +34,7 @@ type Buffer interface {
 	HasChanges(startLine, endLineInc int, lines []string) bool
 	PrepareCompletion(startLine, endLineInc int, lines []string, groups []*text.Group) buffer.Batch
 	CommitPending()
+	CommitUserEdits() bool // Returns true if changes were committed
 	ShowCursorTarget(line int) error
 	ClearUI() error
 	MoveCursor(line int, center, mark bool) error
