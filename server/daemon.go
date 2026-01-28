@@ -48,12 +48,10 @@ func NewDaemon(config Config) (*Daemon, error) {
 		CompletionPath:      config.Provider.CompletionPath,
 	}
 
-	if config.Provider.FIMTokens != nil {
-		providerConfig.FIMTokens = &types.FIMTokenConfig{
-			Prefix: config.Provider.FIMTokens.Prefix,
-			Suffix: config.Provider.FIMTokens.Suffix,
-			Middle: config.Provider.FIMTokens.Middle,
-		}
+	providerConfig.FIMTokens = types.FIMTokenConfig{
+		Prefix: config.Provider.FIMTokens.Prefix,
+		Suffix: config.Provider.FIMTokens.Suffix,
+		Middle: config.Provider.FIMTokens.Middle,
 	}
 
 	var prov engine.Provider

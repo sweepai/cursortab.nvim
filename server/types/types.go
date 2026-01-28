@@ -122,11 +122,11 @@ type FIMTokenConfig struct {
 
 // ProviderConfig holds configuration for providers
 type ProviderConfig struct {
-	ProviderURL         string          // URL of the provider server (e.g., "http://localhost:8000")
-	ProviderModel       string          // Model name
-	ProviderTemperature float64         // Sampling temperature
-	ProviderMaxTokens   int             // Max tokens to generate (also drives input trimming)
-	ProviderTopK        int             // Top-k sampling (used by some providers)
-	CompletionPath      string          // API endpoint path (e.g., "/v1/completions")
-	FIMTokens           *FIMTokenConfig // FIM tokens configuration (optional)
+	ProviderURL         string         // URL of the provider server (e.g., "http://localhost:8000")
+	ProviderModel       string         // Model name
+	ProviderTemperature float64        // Sampling temperature
+	ProviderMaxTokens   int            // Max tokens to generate (also drives input trimming)
+	ProviderTopK        int            // Top-k sampling (used by some providers)
+	CompletionPath      string         // API endpoint path (e.g., "/v1/completions")
+	FIMTokens           FIMTokenConfig // FIM tokens configuration
 }

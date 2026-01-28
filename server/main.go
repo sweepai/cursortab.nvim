@@ -3,9 +3,11 @@ package main
 import (
 	"cursortab/logger"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -32,16 +34,16 @@ type FIMTokensConfig struct {
 
 // ProviderConfig holds provider-specific settings
 type ProviderConfig struct {
-	Type                 string           `json:"type"` // "inline", "sweep", "zeta"
-	URL                  string           `json:"url"`
-	Model                string           `json:"model"`
-	Temperature          float64          `json:"temperature"`
-	MaxTokens            int              `json:"max_tokens"` // Max tokens to generate (also drives input trimming)
-	TopK                 int              `json:"top_k"`
-	CompletionTimeout    int              `json:"completion_timeout"` // in milliseconds
-	MaxDiffHistoryTokens int              `json:"max_diff_history_tokens"`
-	CompletionPath       string           `json:"completion_path"`
-	FIMTokens            *FIMTokensConfig `json:"fim_tokens"`
+	Type                 string          `json:"type"` // "inline", "sweep", "zeta"
+	URL                  string          `json:"url"`
+	Model                string          `json:"model"`
+	Temperature          float64         `json:"temperature"`
+	MaxTokens            int             `json:"max_tokens"` // Max tokens to generate (also drives input trimming)
+	TopK                 int             `json:"top_k"`
+	CompletionTimeout    int             `json:"completion_timeout"` // in milliseconds
+	MaxDiffHistoryTokens int             `json:"max_diff_history_tokens"`
+	CompletionPath       string          `json:"completion_path"`
+	FIMTokens            FIMTokensConfig `json:"fim_tokens"`
 }
 
 // DebugConfig holds debug settings
@@ -56,6 +58,57 @@ type Config struct {
 	Behavior BehaviorConfig `json:"behavior"`
 	Provider ProviderConfig `json:"provider"`
 	Debug    DebugConfig    `json:"debug"`
+}
+
+// Validate checks that the config has valid values.
+// All config must come from the Lua client - no defaults are applied here.
+func (c *Config) Validate() error {
+	// Validate provider type
+	validProviders := map[string]bool{"inline": true, "fim": true, "sweep": true, "zeta": true}
+	if !validProviders[c.Provider.Type] {
+		return fmt.Errorf("invalid provider.type %q: must be one of inline, fim, sweep, zeta", c.Provider.Type)
+	}
+
+	// Validate log level
+	validLogLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
+	if !validLogLevels[c.LogLevel] {
+		return fmt.Errorf("invalid log_level %q: must be one of debug, info, warn, error", c.LogLevel)
+	}
+
+	// Validate numeric ranges
+	if c.Behavior.IdleCompletionDelay < -1 {
+		return fmt.Errorf("invalid behavior.idle_completion_delay %d: must be >= -1", c.Behavior.IdleCompletionDelay)
+	}
+	if c.Behavior.TextChangeDebounce < 0 {
+		return fmt.Errorf("invalid behavior.text_change_debounce %d: must be >= 0", c.Behavior.TextChangeDebounce)
+	}
+	if c.Provider.MaxTokens < 0 {
+		return fmt.Errorf("invalid provider.max_tokens %d: must be >= 0", c.Provider.MaxTokens)
+	}
+	if c.Provider.CompletionTimeout < 0 {
+		return fmt.Errorf("invalid provider.completion_timeout %d: must be >= 0", c.Provider.CompletionTimeout)
+	}
+	if c.Provider.MaxDiffHistoryTokens < 0 {
+		return fmt.Errorf("invalid provider.max_diff_history_tokens %d: must be >= 0", c.Provider.MaxDiffHistoryTokens)
+	}
+
+	// Validate completion_path starts with /
+	if !strings.HasPrefix(c.Provider.CompletionPath, "/") {
+		return fmt.Errorf("invalid provider.completion_path %q: must start with /", c.Provider.CompletionPath)
+	}
+
+	// Validate fim_tokens fields are all non-empty
+	if c.Provider.FIMTokens.Prefix == "" {
+		return fmt.Errorf("invalid provider.fim_tokens.prefix: must be non-empty")
+	}
+	if c.Provider.FIMTokens.Suffix == "" {
+		return fmt.Errorf("invalid provider.fim_tokens.suffix: must be non-empty")
+	}
+	if c.Provider.FIMTokens.Middle == "" {
+		return fmt.Errorf("invalid provider.fim_tokens.middle: must be non-empty")
+	}
+
+	return nil
 }
 
 type ServerMode string
@@ -128,7 +181,11 @@ func isDaemonRunning() (bool, int) {
 func loadConfig() Config {
 	var config Config
 	if err := json.Unmarshal([]byte(os.Getenv("CURSORTAB_CONFIG")), &config); err != nil {
-		logger.Fatal("invalid config: %v", err)
+		logger.Fatal("invalid config JSON: %v", err)
+	}
+
+	if err := config.Validate(); err != nil {
+		logger.Fatal("config validation failed: %v", err)
 	}
 
 	logger.Info("config: %+v", config)

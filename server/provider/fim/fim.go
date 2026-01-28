@@ -7,13 +7,6 @@ import (
 	"strings"
 )
 
-// Default FIM tokens (Qwen/DeepSeek-Coder style)
-const (
-	defaultPrefixToken = "<|fim_prefix|>"
-	defaultSuffixToken = "<|fim_suffix|>"
-	defaultMiddleToken = "<|fim_middle|>"
-)
-
 // NewProvider creates a new fill-in-the-middle completion provider
 func NewProvider(config *types.ProviderConfig) *provider.Provider {
 	return &provider.Provider{
@@ -33,23 +26,9 @@ func NewProvider(config *types.ProviderConfig) *provider.Provider {
 	}
 }
 
-// getFIMTokens returns the FIM tokens from config or defaults
+// getFIMTokens returns the FIM tokens from config
 func getFIMTokens(config *types.ProviderConfig) (prefix, suffix, middle string) {
-	if config.FIMTokens != nil {
-		prefix = config.FIMTokens.Prefix
-		suffix = config.FIMTokens.Suffix
-		middle = config.FIMTokens.Middle
-	}
-	if prefix == "" {
-		prefix = defaultPrefixToken
-	}
-	if suffix == "" {
-		suffix = defaultSuffixToken
-	}
-	if middle == "" {
-		middle = defaultMiddleToken
-	}
-	return
+	return config.FIMTokens.Prefix, config.FIMTokens.Suffix, config.FIMTokens.Middle
 }
 
 func buildPrompt(p *provider.Provider, ctx *provider.Context) *openai.CompletionRequest {
