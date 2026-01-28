@@ -118,8 +118,10 @@ func (p *Provider) BuildCompletion(ctx *Context, startLine, endLineInc int, line
 }
 
 func (p *Provider) logRequest(req *openai.CompletionRequest, maxLines int) {
-	logger.Debug("%s provider request:\n  Model: %s\n  Temperature: %.2f\n  MaxTokens: %d\n  MaxLines: %d\n  Prompt length: %d chars\n  Prompt:\n%s",
+	logger.Debug("%s provider request:\n  URL: %s%s\n  Model: %s\n  Temperature: %.2f\n  MaxTokens: %d\n  MaxLines: %d\n  Prompt length: %d chars\n  Prompt:\n%s",
 		p.Name,
+		p.Config.ProviderURL,
+		p.Config.CompletionPath,
 		req.Model,
 		req.Temperature,
 		req.MaxTokens,

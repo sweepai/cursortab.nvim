@@ -67,6 +67,8 @@ local function start_daemon()
 			top_k = cfg.provider.top_k,
 			completion_timeout = cfg.provider.completion_timeout,
 			max_diff_history_tokens = cfg.provider.max_diff_history_tokens,
+			completion_path = cfg.provider.completion_path,
+			fim_tokens = cfg.provider.fim_tokens,
 		},
 		debug = {
 			immediate_shutdown = cfg.debug.immediate_shutdown,
