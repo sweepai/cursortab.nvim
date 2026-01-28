@@ -102,16 +102,16 @@ require("cursortab").setup({
   },
 
   provider = {
-    type = "inline",                   -- Provider: "inline", "fim", "sweep", or "zeta"
-    url = "http://localhost:8000",     -- URL of the provider server
-    model = "",                        -- Model name
-    temperature = 0.0,                 -- Sampling temperature
-    max_tokens = 512,                  -- Max tokens to generate
-    top_k = 50,                        -- Top-k sampling
-    completion_timeout = 5000,         -- Timeout in ms for completion requests
-    max_diff_history_tokens = 512,     -- Max tokens for diff history (0 = no limit)
-    completion_path = "/v1/completions", -- API endpoint path
-    fim_tokens = {                     -- FIM tokens (for FIM provider)
+    type = "inline",                      -- Provider: "inline", "fim", "sweep", or "zeta"
+    url = "http://localhost:8000",        -- URL of the provider server
+    model = "",                           -- Model name
+    temperature = 0.0,                    -- Sampling temperature
+    max_tokens = 512,                     -- Max tokens to generate
+    top_k = 50,                           -- Top-k sampling
+    completion_timeout = 5000,            -- Timeout in ms for completion requests
+    max_diff_history_tokens = 512,        -- Max tokens for diff history (0 = no limit)
+    completion_path = "/v1/completions",  -- API endpoint path
+    fim_tokens = {                        -- FIM tokens (for FIM provider)
       prefix = "<|fim_prefix|>",
       suffix = "<|fim_suffix|>",
       middle = "<|fim_middle|>",
