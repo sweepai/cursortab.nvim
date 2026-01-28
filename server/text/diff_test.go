@@ -1066,3 +1066,30 @@ func TestPureAdditionsAtEndOfFile(t *testing.T) {
 		assert.Equal(t, "", line5Change.Content, "line 5 should be empty string")
 	}
 }
+
+// TestEmptyLineFilledWithContent verifies that filling an empty line with content
+// is categorized as append_chars (inline ghost text), not addition (virtual line).
+func TestEmptyLineFilledWithContent(t *testing.T) {
+	// Scenario: cursor is on empty line 8, autocomplete suggests "def calc_angle(x, y"
+	// This should render as inline ghost text, not a new virtual line
+	text1 := JoinLines([]string{""})                      // empty line
+	text2 := JoinLines([]string{"def calc_angle(x, y"}) // filled with content
+
+	actual := ComputeDiff(text1, text2)
+
+	t.Logf("Changes: %d", len(actual.Changes))
+	for lineNum, change := range actual.Changes {
+		t.Logf("  Line %d: Type=%v, Content=%q, ColStart=%d, ColEnd=%d",
+			lineNum, change.Type, change.Content, change.ColStart, change.ColEnd)
+	}
+
+	assert.Equal(t, 1, len(actual.Changes), "should have 1 change")
+
+	change, exists := actual.Changes[1]
+	assert.True(t, exists, "change at line 1")
+	assert.Equal(t, ChangeAppendChars, change.Type, "should be append_chars, not addition")
+	assert.Equal(t, 0, change.ColStart, "ColStart should be 0 (start of line)")
+	assert.Equal(t, 19, change.ColEnd, "ColEnd should be length of new content")
+	assert.Equal(t, "", change.OldContent, "OldContent should be empty")
+	assert.Equal(t, "def calc_angle(x, y", change.Content, "Content")
+}

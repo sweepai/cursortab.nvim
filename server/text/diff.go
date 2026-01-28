@@ -380,8 +380,8 @@ func handleModificationsWithMapping(deletedLines, insertedLines []string,
 				// Only old has content: deletion
 				result.addDeletion(oldIdx+1, newIdx+1, deletedLines[j])
 			} else if insertedLines[j] != "" {
-				// Only new has content: addition
-				result.addAddition(oldIdx+1, newIdx+1, insertedLines[j])
+				// Empty line filled with content: modification (categorizes as append_chars)
+				result.addModification(oldIdx+1, newIdx+1, "", insertedLines[j])
 			}
 		}
 		return
@@ -456,6 +456,12 @@ func handleModificationsWithMapping(deletedLines, insertedLines []string,
 
 // categorizeLineChangeWithColumns determines the type of change between two lines and returns column range
 func categorizeLineChangeWithColumns(oldLine, newLine string) (ChangeType, int, int) {
+	// Handle empty old line with non-empty new line (filling an empty line)
+	// This should be append_chars so it renders as inline ghost text, not a virtual line
+	if oldLine == "" && newLine != "" {
+		return ChangeAppendChars, 0, len(newLine)
+	}
+
 	dmp := diffmatchpatch.New()
 	diffs := dmp.DiffMain(oldLine, newLine, false)
 	diffs = dmp.DiffCleanupSemantic(diffs)
