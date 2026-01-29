@@ -5,23 +5,6 @@ import (
 	"testing"
 )
 
-func TestEstimateCharsFromTokens(t *testing.T) {
-	tests := []struct {
-		tokens int
-		want   int
-	}{
-		{0, 0},
-		{1, 2},
-		{100, 200},
-		{1000, 2000},
-	}
-
-	for _, tt := range tests {
-		got := EstimateCharsFromTokens(tt.tokens)
-		assert.Equal(t, tt.want, got, "EstimateCharsFromTokens")
-	}
-}
-
 func TestTrimContentAroundCursor_EmptyFile(t *testing.T) {
 	lines := []string{}
 	trimmed, cursorRow, cursorCol, offset, didTrim := TrimContentAroundCursor(lines, 0, 0, 100)

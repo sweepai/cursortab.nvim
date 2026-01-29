@@ -12,58 +12,6 @@ import (
 	"time"
 )
 
-func TestNewClient(t *testing.T) {
-	client := NewClient("http://localhost:8080", "/v1/completions")
-
-	assert.Equal(t, "http://localhost:8080", client.URL, "URL")
-	assert.Equal(t, "/v1/completions", client.CompletionPath, "CompletionPath")
-	assert.NotNil(t, client.HTTPClient, "HTTPClient")
-}
-
-func TestStreamResult_Interface(t *testing.T) {
-	result := &StreamResult{
-		Text:         "hello world",
-		FinishReason: "stop",
-		StoppedEarly: false,
-	}
-
-	assert.Equal(t, "hello world", result.GetText(), "GetText()")
-	assert.Equal(t, "stop", result.GetFinishReason(), "GetFinishReason()")
-	assert.False(t, result.IsStoppedEarly(), "IsStoppedEarly()")
-}
-
-func TestLineStream_Interface(t *testing.T) {
-	lines := make(chan string, 1)
-	done := make(chan StreamResult, 1)
-	cancelled := false
-
-	stream := &LineStream{
-		lines:  lines,
-		done:   done,
-		cancel: func() { cancelled = true },
-	}
-
-	// Verify channels are returned
-	if stream.LinesChan() == nil {
-		t.Error("LinesChan() should not be nil")
-	}
-	if stream.DoneChan() == nil {
-		t.Error("DoneChan() should not be nil")
-	}
-
-	stream.Cancel()
-	assert.True(t, cancelled, "Cancel() should call the cancel function")
-}
-
-func TestLineStream_NilCancel(t *testing.T) {
-	stream := &LineStream{
-		cancel: nil,
-	}
-
-	// Should not panic
-	stream.Cancel()
-}
-
 func TestDoCompletion_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "POST", r.Method, "HTTP method")

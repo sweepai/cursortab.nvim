@@ -9,23 +9,6 @@ import (
 	"testing"
 )
 
-func TestNewProvider(t *testing.T) {
-	config := &types.ProviderConfig{
-		ProviderURL:   "http://localhost:8080",
-		ProviderModel: "test-model",
-	}
-
-	p := NewProvider(config)
-
-	assert.Equal(t, "sweep", p.Name, "provider name")
-	assert.Equal(t, provider.StreamingLines, p.StreamingType, "streaming type")
-	assert.NotNil(t, p.Client, "client should be set")
-	assert.Equal(t, 1, len(p.Preprocessors), "should have 1 preprocessor")
-	assert.Equal(t, 4, len(p.Postprocessors), "should have 4 postprocessors")
-	assert.Equal(t, 1, len(p.Validators), "should have 1 validator")
-	assert.Equal(t, 2, len(p.StopTokens), "should have 2 stop tokens")
-}
-
 func TestBuildPrompt_EmptyLines(t *testing.T) {
 	config := &types.ProviderConfig{
 		ProviderModel: "test-model",

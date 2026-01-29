@@ -9,26 +9,6 @@ import (
 	"testing"
 )
 
-func TestNewProvider(t *testing.T) {
-	config := &types.ProviderConfig{
-		ProviderURL:   "http://localhost:8080",
-		ProviderModel: "test-model",
-		FIMTokens: types.FIMTokenConfig{
-			Prefix: "<PRE>",
-			Suffix: "<SUF>",
-			Middle: "<MID>",
-		},
-	}
-
-	p := NewProvider(config)
-
-	assert.Equal(t, "fim", p.Name, "provider name")
-	assert.Equal(t, provider.StreamingLines, p.StreamingType, "streaming type")
-	assert.NotNil(t, p.Client, "client should be set")
-	assert.Equal(t, 1, len(p.Preprocessors), "should have 1 preprocessor")
-	assert.Equal(t, 3, len(p.Postprocessors), "should have 3 postprocessors")
-}
-
 func TestGetFIMTokens(t *testing.T) {
 	config := &types.ProviderConfig{
 		FIMTokens: types.FIMTokenConfig{

@@ -259,11 +259,6 @@ func (b *IncrementalStageBuilder) shouldStartNewStage(bufferLine int, isInViewpo
 	return false
 }
 
-// IsCurrentStageInViewport returns whether the current stage is within the viewport
-func (b *IncrementalStageBuilder) IsCurrentStageInViewport() bool {
-	return b.currentStageInViewport
-}
-
 // startNewStage initializes a new stage with the given change
 func (b *IncrementalStageBuilder) startNewStage(lineNum int, bufferLine int, change LineChange, isInViewport bool) {
 	b.currentStage = &Stage{
@@ -472,3 +467,4 @@ func (b *IncrementalStageBuilder) Finalize() *StagingResult {
 		FirstNeedsNavigation: firstNeedsNav,
 	}
 }
+

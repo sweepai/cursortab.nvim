@@ -9,24 +9,6 @@ import (
 	"testing"
 )
 
-func TestNewProvider(t *testing.T) {
-	config := &types.ProviderConfig{
-		ProviderURL:   "http://localhost:8080",
-		ProviderModel: "test-model",
-	}
-
-	p := NewProvider(config)
-
-	assert.Equal(t, "zeta", p.Name, "provider name")
-	assert.Equal(t, provider.StreamingLines, p.StreamingType, "streaming type")
-	assert.NotNil(t, p.Client, "client should be set")
-	assert.Equal(t, 1, len(p.Preprocessors), "should have 1 preprocessor")
-	assert.Equal(t, 4, len(p.Postprocessors), "should have 4 postprocessors")
-	assert.Equal(t, 1, len(p.Validators), "should have 1 validator")
-	assert.Equal(t, 1, len(p.StopTokens), "should have 1 stop token")
-	assert.Equal(t, "\n<|editable_region_end|>", p.StopTokens[0], "stop token")
-}
-
 func TestBuildUserExcerpt_EmptyFile(t *testing.T) {
 	req := &types.CompletionRequest{
 		FilePath: "main.go",

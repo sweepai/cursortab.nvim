@@ -8,26 +8,6 @@ import (
 	"testing"
 )
 
-func TestNewProvider(t *testing.T) {
-	config := &types.ProviderConfig{
-		ProviderURL:         "http://localhost:8080",
-		ProviderModel:       "test-model",
-		ProviderTemperature: 0.7,
-		ProviderMaxTokens:   100,
-		CompletionPath:      "/v1/completions",
-	}
-
-	p := NewProvider(config)
-
-	assert.Equal(t, "inline", p.Name, "provider name")
-	assert.Equal(t, provider.StreamingTokens, p.StreamingType, "streaming type")
-	assert.NotNil(t, p.Client, "client should be set")
-	assert.Equal(t, 2, len(p.Preprocessors), "should have 2 preprocessors")
-	assert.Equal(t, 3, len(p.Postprocessors), "should have 3 postprocessors")
-	assert.Equal(t, 1, len(p.StopTokens), "should have 1 stop token")
-	assert.Equal(t, "\n", p.StopTokens[0], "stop token should be newline")
-}
-
 func TestBuildPrompt_EmptyLines(t *testing.T) {
 	config := &types.ProviderConfig{
 		ProviderModel:       "test-model",

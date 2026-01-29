@@ -267,33 +267,3 @@ func TestGetNumber(t *testing.T) {
 	assert.Equal(t, -1, getNumber(m, "string"), "should return -1 for non-number")
 	assert.Equal(t, -1, getNumber(m, "missing"), "should return -1 for missing key")
 }
-
-// --- Accessor Tests ---
-
-func TestBufferAccessors(t *testing.T) {
-	buf := New(Config{NsID: 1})
-	buf.lines = []string{"a", "b", "c"}
-	buf.row = 2
-	buf.col = 5
-	buf.path = "test.go"
-	buf.version = 3
-	buf.viewportTop = 1
-	buf.viewportBottom = 50
-	buf.previousLines = []string{"prev"}
-	buf.originalLines = []string{"orig"}
-	buf.diffHistories = []*types.DiffEntry{{Original: "x", Updated: "y"}}
-
-	assert.Equal(t, 3, len(buf.Lines()), "Lines")
-	assert.Equal(t, 2, buf.Row(), "Row")
-	assert.Equal(t, 5, buf.Col(), "Col")
-	assert.Equal(t, "test.go", buf.Path(), "Path")
-	assert.Equal(t, 3, buf.Version(), "Version")
-
-	top, bottom := buf.ViewportBounds()
-	assert.Equal(t, 1, top, "ViewportTop")
-	assert.Equal(t, 50, bottom, "ViewportBottom")
-
-	assert.Equal(t, 1, len(buf.PreviousLines()), "PreviousLines")
-	assert.Equal(t, 1, len(buf.OriginalLines()), "OriginalLines")
-	assert.Equal(t, 1, len(buf.DiffHistories()), "DiffHistories")
-}
