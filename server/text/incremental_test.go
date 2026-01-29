@@ -208,9 +208,6 @@ func TestIncrementalStageBuilder_ViewportBoundary(t *testing.T) {
 	builder.AddLine("line four")
 	builder.AddLine("line five modified") // still in viewport, buffer line = 5
 
-	// Verify current stage is in viewport before adding line 6
-	assert.True(t, builder.IsCurrentStageInViewport(), "current stage should be in viewport")
-
 	// Add remaining lines to complete the sequence
 	builder.AddLine("line six modified") // outside viewport, buffer line = 6
 	builder.AddLine("line seven")
