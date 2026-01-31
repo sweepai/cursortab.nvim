@@ -59,8 +59,9 @@ local function on_partial_accept()
 		daemon.send_event("partial_accept")
 		return ""
 	else
-		-- Pass through original key
-		return vim.api.nvim_replace_termcodes("<S-Tab>", true, true, true)
+		-- Pass through configured key
+		local cfg = config.get()
+		return vim.api.nvim_replace_termcodes(cfg.keymaps.partial_accept, true, true, true)
 	end
 end
 

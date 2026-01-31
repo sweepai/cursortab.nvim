@@ -166,11 +166,9 @@ func (e *Engine) finishPartialAccept() {
 				}
 			}
 
-			// Set cursorTarget from next stage before calling handleCursorTarget
-			nextStage := e.getStage(e.stagedCompletion.CurrentIdx)
-			if nextStage != nil && nextStage.CursorTarget != nil {
-				e.cursorTarget = nextStage.CursorTarget
-			}
+			// For partial accepts on staged completions, don't immediately jump to the next stage's cursor target.
+			// The next stage will be shown via showCurrentStage() when appropriate.
+			// Only update cursor target if the next stage is explicitly ready to be shown.
 
 			e.handleCursorTarget()
 			return
