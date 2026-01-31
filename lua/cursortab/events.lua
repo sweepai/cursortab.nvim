@@ -11,13 +11,17 @@ local events = {}
 -- Track if events have been set up to prevent duplicate registrations
 local events_setup_done = false
 
--- Skip exactly one TextChanged after accepting a completion via <Tab>
+-- Skip exactly one TextChanged after accepting a completion
 ---@type boolean
 local skip_next_text_changed = false
 
 -- State for cursor movement suppression during completion application
 ---@type boolean
 local skip_next_cursor_moved = false
+
+-- Flag to suppress reject events while waiting for completion after cursor target accept
+---@type boolean
+local awaiting_completion_after_jump = false
 
 -- Function to clear all visible completions and predictions
 local function clear_all_completions()
@@ -28,14 +32,19 @@ local function clear_all_completions()
 	daemon.send_reject()
 end
 
--- Tab key handler
+-- Accept key handler
 ---@return string
-local function on_tab()
+local function on_accept()
 	if ui.has_cursor_prediction() or ui.has_completion() then
 		-- Suppress the immediate text change and cursor movement caused by applying the completion
 		skip_next_text_changed = true
 		skip_next_cursor_moved = true
-		daemon.send_event("tab")
+		-- When accepting cursor prediction, suppress rejects until we receive the completion
+		-- Server runs normal! commands which trigger multiple events
+		if ui.has_cursor_prediction() then
+			awaiting_completion_after_jump = true
+		end
+		daemon.send_event("accept")
 		return ""
 	else
 		return "\t"
@@ -124,6 +133,11 @@ function events.setup()
 				return
 			end
 
+			-- Skip while awaiting completion after cursor target jump
+			if awaiting_completion_after_jump then
+				return
+			end
+
 			if ui.has_cursor_prediction() or ui.has_completion() then
 				ui.ensure_close_all()
 			end
@@ -157,8 +171,8 @@ function events.setup()
 	local cfg = config.get()
 	if cfg.keymaps.accept then
 		local accept_key = cfg.keymaps.accept --[[@as string]]
-		vim.keymap.set("i", accept_key, on_tab, { noremap = true, silent = true, expr = true })
-		vim.keymap.set("n", accept_key, on_tab, { noremap = true, silent = true, expr = true })
+		vim.keymap.set("i", accept_key, on_accept, { noremap = true, silent = true, expr = true })
+		vim.keymap.set("n", accept_key, on_accept, { noremap = true, silent = true, expr = true })
 	end
 	if cfg.keymaps.partial_accept then
 		local partial_key = cfg.keymaps.partial_accept --[[@as string]]
@@ -172,6 +186,11 @@ function events.setup()
 		callback = function(args)
 			-- Don't close when transitioning from normal to insert mode
 			if args.event == "ModeChanged" and args.match and args.match:match("^n:i") then
+				return
+			end
+
+			-- Skip all events while awaiting completion after cursor target jump
+			if awaiting_completion_after_jump then
 				return
 			end
 
@@ -189,10 +208,15 @@ function events.clear_all_completions()
 	clear_all_completions()
 end
 
+-- Clear the awaiting completion flag (called when completion is received)
+function events.clear_awaiting_completion()
+	awaiting_completion_after_jump = false
+end
+
 ---Accept current completion/prediction if available.
 ---@return boolean accepted
 function events.accept()
-	return on_tab() == ""
+	return on_accept() == ""
 end
 
 return events

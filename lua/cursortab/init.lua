@@ -13,6 +13,8 @@ local M = {}
 
 ---RPC callback: called when completion is rejected
 function M.on_reject()
+	-- Clear awaiting flag in case we were waiting for a completion
+	events.clear_awaiting_completion()
 	ui.close_all()
 end
 
@@ -25,6 +27,8 @@ end
 ---RPC callback: called when completion is ready
 ---@param diff_result DiffResult Completion diff result from Go daemon
 function M.on_completion_ready(diff_result)
+	-- Clear the awaiting flag now that we've received the completion
+	events.clear_awaiting_completion()
 	ui.show_completion(diff_result)
 end
 

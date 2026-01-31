@@ -1,0 +1,436 @@
+package engine
+
+import (
+	"cursortab/logger"
+	"cursortab/text"
+	"cursortab/types"
+)
+
+// clearCompletionState clears completion-related state after accept.
+// Does not affect prefetch, staged completion, or cursor target.
+func (e *Engine) clearCompletionState() {
+	e.completions = nil
+	e.applyBatch = nil
+	e.currentGroups = nil
+	e.completionOriginalLines = nil
+}
+
+// acceptCompletion handles Tab key acceptance of completions.
+// This is the main entry point for full completion acceptance.
+func (e *Engine) acceptCompletion() {
+	if e.applyBatch == nil {
+		return
+	}
+
+	// 1. Apply and commit
+	if err := e.applyBatch.Execute(); err != nil {
+		logger.Error("acceptCompletion: batch execution failed: %v", err)
+		e.clearAll()
+		return
+	}
+	e.buffer.CommitPending()
+	e.saveCurrentFileState()
+
+	// 2. Clear completion state (keep prefetch)
+	e.clearCompletionState()
+
+	// 3. Advance staged completion if any
+	if e.stagedCompletion != nil {
+		e.advanceStagedCompletion()
+	}
+
+	// 4. Determine next state
+	if e.hasMoreStages() {
+		e.syncBuffer()
+		e.prefetchAtNMinusOne()
+		e.showOrNavigateToNextStage()
+		return
+	}
+
+	// 5. No more stages - handle cursor target
+	e.syncBuffer()
+	if e.cursorTarget != nil && e.cursorTarget.ShouldRetrigger {
+		// If prefetch is ready, use it to show next completion/cursor prediction
+		if e.prefetchState == prefetchReady && len(e.prefetchedCompletions) > 0 {
+			if e.tryShowPrefetchedCompletion() {
+				return
+			}
+		}
+		e.prefetchAtCursorTarget()
+	}
+	e.transitionAfterAccept()
+}
+
+// acceptCursorTarget handles Tab key from HasCursorTarget state.
+// Moves cursor to target and shows next stage or handles prefetch.
+func (e *Engine) acceptCursorTarget() {
+	if e.cursorTarget == nil {
+		return
+	}
+
+	// 1. Move cursor to target line
+	targetLine := int(e.cursorTarget.LineNumber)
+	if err := e.buffer.MoveCursor(targetLine, true, true); err != nil {
+		logger.Error("acceptCursorTarget: move cursor failed: %v", err)
+	}
+
+	// 2. If more staged completions, show current stage
+	if e.hasMoreStages() {
+		e.syncBuffer()
+		e.showCurrentStage()
+		return
+	}
+
+	// 3. No staged completions - handle prefetch/retrigger logic
+	e.syncBuffer()
+
+	// 3a. Try to use prefetched completion
+	if e.prefetchState == prefetchReady && len(e.prefetchedCompletions) > 0 {
+		if e.tryShowPrefetchedCompletion() {
+			return
+		}
+	}
+
+	// 3b. If prefetch in flight, wait for it
+	if e.prefetchState == prefetchInFlight {
+		e.prefetchState = prefetchWaitingForTab
+		return
+	}
+
+	// 3c. If should retrigger, request new completion
+	if e.cursorTarget.ShouldRetrigger {
+		e.requestCompletion(types.CompletionSourceTyping)
+		e.cursorTarget = nil
+		return
+	}
+
+	// 3d. Otherwise, clear and go idle
+	e.buffer.ClearUI()
+	e.cursorTarget = nil
+	e.state = stateIdle
+}
+
+// advanceStagedCompletion advances to the next stage and applies line offset to remaining stages.
+func (e *Engine) advanceStagedCompletion() {
+	if e.stagedCompletion == nil {
+		return
+	}
+
+	// Calculate cumulative offset from current stage
+	currentStage := e.getStage(e.stagedCompletion.CurrentIdx)
+	if currentStage != nil {
+		oldLineCount := currentStage.BufferEnd - currentStage.BufferStart + 1
+		newLineCount := len(currentStage.Lines)
+		e.stagedCompletion.CumulativeOffset += newLineCount - oldLineCount
+	}
+
+	// Advance to next stage
+	e.stagedCompletion.CurrentIdx++
+
+	// Check if we're done
+	if e.stagedCompletion.CurrentIdx >= len(e.stagedCompletion.Stages) {
+		e.stagedCompletion = nil
+		return
+	}
+
+	// Apply cumulative offset to remaining stages
+	if e.stagedCompletion.CumulativeOffset != 0 {
+		for i := e.stagedCompletion.CurrentIdx; i < len(e.stagedCompletion.Stages); i++ {
+			stage := e.getStage(i)
+			if stage != nil {
+				stage.BufferStart += e.stagedCompletion.CumulativeOffset
+				stage.BufferEnd += e.stagedCompletion.CumulativeOffset
+
+				if stage.CursorTarget != nil {
+					stage.CursorTarget.LineNumber += int32(e.stagedCompletion.CumulativeOffset)
+				}
+			}
+		}
+		e.stagedCompletion.CumulativeOffset = 0
+	}
+}
+
+// hasMoreStages returns true if there are more stages to process.
+func (e *Engine) hasMoreStages() bool {
+	return e.stagedCompletion != nil &&
+		e.stagedCompletion.CurrentIdx < len(e.stagedCompletion.Stages)
+}
+
+// showOrNavigateToNextStage checks distance to next stage and either shows it
+// directly (if close) or shows a cursor target (if far).
+func (e *Engine) showOrNavigateToNextStage() {
+	nextStage := e.getStage(e.stagedCompletion.CurrentIdx)
+	if nextStage == nil {
+		return
+	}
+
+	// Calculate distance from cursor to next stage
+	cursorRow := e.buffer.Row()
+	var distance int
+	if cursorRow < nextStage.BufferStart {
+		distance = nextStage.BufferStart - cursorRow
+	} else if cursorRow > nextStage.BufferEnd {
+		distance = cursorRow - nextStage.BufferEnd
+	} else {
+		distance = 0 // Cursor is within the stage range
+	}
+
+	if distance <= e.config.CursorPrediction.ProximityThreshold {
+		// Close enough - show stage directly
+		e.showCurrentStage()
+		return
+	}
+
+	// Too far - show cursor target instead
+	e.cursorTarget = &types.CursorPredictionTarget{
+		RelativePath:    e.buffer.Path(),
+		LineNumber:      int32(nextStage.BufferStart),
+		ShouldRetrigger: false,
+	}
+	e.state = stateHasCursorTarget
+	e.buffer.ShowCursorTarget(nextStage.BufferStart)
+}
+
+// prefetchAtNMinusOne triggers prefetch when at the second-to-last stage.
+func (e *Engine) prefetchAtNMinusOne() {
+	if e.stagedCompletion == nil {
+		return
+	}
+
+	// Check if we're at n-1 (one stage remaining after current)
+	if e.stagedCompletion.CurrentIdx != len(e.stagedCompletion.Stages)-1 {
+		return
+	}
+
+	lastStage := e.getStage(len(e.stagedCompletion.Stages) - 1)
+	if lastStage == nil || lastStage.CursorTarget == nil || !lastStage.CursorTarget.ShouldRetrigger {
+		return
+	}
+
+	overrideRow := max(1, lastStage.BufferStart)
+	e.requestPrefetch(types.CompletionSourceTyping, overrideRow, 0)
+	e.prefetchState = prefetchWaitingForCursorPrediction
+}
+
+// prefetchAtCursorTarget triggers prefetch after accepting to cursor target position.
+func (e *Engine) prefetchAtCursorTarget() {
+	if e.cursorTarget == nil || !e.cursorTarget.ShouldRetrigger {
+		return
+	}
+
+	// Skip if prefetch already in flight
+	if e.prefetchState != prefetchNone {
+		return
+	}
+
+	overrideRow := max(1, int(e.cursorTarget.LineNumber))
+	e.requestPrefetch(types.CompletionSourceTyping, overrideRow, 0)
+	e.prefetchState = prefetchWaitingForCursorPrediction
+}
+
+// transitionAfterAccept handles state transition after accept based on cursor target.
+func (e *Engine) transitionAfterAccept() {
+	// If no cursor target or prediction disabled, go idle
+	if e.cursorTarget == nil || !e.config.CursorPrediction.Enabled {
+		e.buffer.ClearUI()
+		e.state = stateIdle
+		return
+	}
+
+	// Never show cursor target within proximity threshold
+	cursorRow := e.buffer.Row()
+	targetLine := int(e.cursorTarget.LineNumber)
+	distance := abs(targetLine - cursorRow)
+	if distance <= e.config.CursorPrediction.ProximityThreshold {
+		e.buffer.ClearUI()
+		e.cursorTarget = nil
+		e.state = stateIdle
+		return
+	}
+
+	// Show cursor target indicator
+	e.buffer.ShowCursorTarget(targetLine)
+	e.state = stateHasCursorTarget
+}
+
+// partialAcceptCompletion handles Ctrl+Right partial acceptance.
+func (e *Engine) partialAcceptCompletion() {
+	if len(e.completions) == 0 {
+		return
+	}
+
+	groups := e.getCurrentGroups()
+	if len(groups) == 0 {
+		return
+	}
+
+	firstGroup := groups[0]
+
+	if firstGroup.RenderHint == "append_chars" {
+		e.partialAcceptAppendChars(firstGroup)
+	} else {
+		e.partialAcceptNextLine()
+	}
+}
+
+// partialAcceptAppendChars accepts word-by-word for append_chars hint.
+func (e *Engine) partialAcceptAppendChars(group *text.Group) {
+	if group == nil || len(e.completions) == 0 || len(e.completions[0].Lines) == 0 {
+		return
+	}
+
+	e.syncBuffer()
+	bufferLines := e.buffer.Lines()
+	lineIdx := group.BufferLine - 1
+
+	if lineIdx < 0 || lineIdx >= len(bufferLines) {
+		logger.Error("partialAcceptAppendChars: buffer line out of range: %d", group.BufferLine)
+		return
+	}
+
+	currentLine := bufferLines[lineIdx]
+	targetLine := e.completions[0].Lines[0]
+
+	// Check if fully accepted
+	if len(currentLine) >= len(targetLine) {
+		e.finalizePartialAccept()
+		return
+	}
+
+	remainingGhost := targetLine[len(currentLine):]
+
+	// Find next word boundary
+	acceptLen := text.FindNextWordBoundary(remainingGhost)
+	textToAccept := remainingGhost[:acceptLen]
+
+	// Insert text
+	if err := e.buffer.InsertText(lineIdx+1, len(currentLine), textToAccept); err != nil {
+		logger.Error("partialAcceptAppendChars: insert text failed: %v", err)
+		return
+	}
+
+	// Check if fully accepted now
+	newLineLen := len(currentLine) + acceptLen
+	if newLineLen >= len(targetLine) {
+		e.finalizePartialAccept()
+	} else {
+		e.rerenderPartial()
+	}
+}
+
+// partialAcceptNextLine accepts line-by-line.
+func (e *Engine) partialAcceptNextLine() {
+	if len(e.completions) == 0 || len(e.completions[0].Lines) == 0 {
+		return
+	}
+
+	completion := e.completions[0]
+	firstLine := completion.Lines[0]
+
+	// Replace first line
+	if err := e.buffer.ReplaceLine(completion.StartLine, firstLine); err != nil {
+		logger.Error("partialAcceptNextLine: replace line failed: %v", err)
+		return
+	}
+
+	if len(completion.Lines) == 1 {
+		// Last line - finalize
+		e.finalizePartialAccept()
+		return
+	}
+
+	// Update completion for remaining lines
+	e.completions[0].Lines = completion.Lines[1:]
+	e.completions[0].StartLine++
+	e.completions[0].EndLineInc = e.completions[0].StartLine + len(e.completions[0].Lines) - 1
+
+	e.rerenderPartial()
+}
+
+// finalizePartialAccept commits partial accept and handles next stage.
+func (e *Engine) finalizePartialAccept() {
+	e.buffer.CommitPending()
+	e.saveCurrentFileState()
+	e.clearCompletionState()
+
+	// Advance staged completion if any
+	if e.stagedCompletion != nil {
+		e.advanceStagedCompletion()
+	}
+
+	// Determine next state
+	if e.hasMoreStages() {
+		e.syncBuffer()
+		e.prefetchAtNMinusOne()
+		e.showOrNavigateToNextStage()
+		return
+	}
+
+	// No more stages - handle cursor target
+	e.syncBuffer()
+	if e.cursorTarget != nil && e.cursorTarget.ShouldRetrigger {
+		// If prefetch is ready, use it to show next completion/cursor prediction
+		if e.prefetchState == prefetchReady && len(e.prefetchedCompletions) > 0 {
+			if e.tryShowPrefetchedCompletion() {
+				return
+			}
+		}
+		e.prefetchAtCursorTarget()
+	}
+	e.transitionAfterAccept()
+}
+
+// rerenderPartial re-renders remaining ghost text after partial accept.
+func (e *Engine) rerenderPartial() {
+	if len(e.completions) == 0 {
+		return
+	}
+
+	completion := e.completions[0]
+
+	// Sync buffer to get current state
+	e.syncBuffer()
+
+	// Get current buffer lines for completion range
+	bufferLines := e.buffer.Lines()
+	var originalLines []string
+	for i := completion.StartLine; i <= completion.EndLineInc && i-1 < len(bufferLines); i++ {
+		originalLines = append(originalLines, bufferLines[i-1])
+	}
+
+	// Re-analyze diff
+	diffResult := text.ComputeDiff(
+		text.JoinLines(originalLines),
+		text.JoinLines(completion.Lines),
+	)
+
+	// Group changes
+	groups := text.GroupChanges(diffResult.Changes)
+
+	// Set BufferLine for each group
+	for _, g := range groups {
+		g.BufferLine = completion.StartLine + g.StartLine - 1
+	}
+
+	// Re-render
+	e.applyBatch = e.buffer.PrepareCompletion(
+		completion.StartLine,
+		completion.EndLineInc,
+		completion.Lines,
+		groups,
+	)
+
+	e.currentGroups = groups
+	e.completionOriginalLines = originalLines
+}
+
+// getCurrentGroups returns the groups for the current completion/stage.
+func (e *Engine) getCurrentGroups() []*text.Group {
+	if e.stagedCompletion != nil {
+		stage := e.getStage(e.stagedCompletion.CurrentIdx)
+		if stage != nil {
+			return stage.Groups
+		}
+	}
+	return e.currentGroups
+}

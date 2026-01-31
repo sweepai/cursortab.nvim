@@ -47,7 +47,7 @@ func TestPartialAccept_MultiLineCompletion_CursorTargetConsistency(t *testing.T)
 		eng.stagedCompletion = nil
 
 		// Full accept all lines at once
-		eng.doAcceptCompletion(Event{Type: EventTab})
+		eng.doAcceptCompletion(Event{Type: EventAccept})
 
 		assert.Equal(t, int(expectedCursorTarget), buf.showCursorTargetLine, "cursor target should be preserved after full accept")
 	})
