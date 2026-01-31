@@ -51,6 +51,10 @@
 ---@class CursortabKeymapsConfig
 ---@field accept string|false Accept keymap (e.g., "<Tab>"), or false to disable
 
+---@class CursortabBlinkConfig
+---@field enabled boolean
+---@field ghost_text boolean
+
 ---@class CursortabConfig
 ---@field enabled boolean
 ---@field log_level string
@@ -58,6 +62,7 @@
 ---@field ui CursortabUIConfig
 ---@field behavior CursortabBehaviorConfig
 ---@field provider CursortabProviderConfig
+---@field blink CursortabBlinkConfig
 ---@field debug CursortabDebugConfig
 
 -- Default configuration
@@ -112,6 +117,11 @@ local default_config = {
 			suffix = "<|fim_suffix|>",
 			middle = "<|fim_middle|>",
 		},
+	},
+
+	blink = {
+		enabled = false,
+		ghost_text = true,
 	},
 
 	debug = {
