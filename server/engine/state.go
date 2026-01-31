@@ -74,21 +74,24 @@ var transitions = []Transition{
 	{statePendingCompletion, EventCursorMovedNormal, (*Engine).doResetIdleTimer},
 
 	// From stateHasCompletion
-	{stateHasCompletion, EventTab, (*Engine).doAcceptCompletion},
+	{stateHasCompletion, EventAccept, (*Engine).doAcceptCompletion},
+	{stateHasCompletion, EventPartialAccept, (*Engine).doPartialAcceptCompletion},
 	{stateHasCompletion, EventEsc, (*Engine).doReject},
 	{stateHasCompletion, EventTextChanged, (*Engine).doTextChangeWithCompletion},
 	{stateHasCompletion, EventInsertLeave, (*Engine).doRejectAndStartIdleTimer},
 	{stateHasCompletion, EventCursorMovedNormal, (*Engine).doResetIdleTimer},
 
 	// From stateHasCursorTarget
-	{stateHasCursorTarget, EventTab, (*Engine).doAcceptCursorTarget},
+	{stateHasCursorTarget, EventAccept, (*Engine).doAcceptCursorTarget},
 	{stateHasCursorTarget, EventEsc, (*Engine).doReject},
 	{stateHasCursorTarget, EventTextChanged, (*Engine).doRejectAndDebounce},
 	{stateHasCursorTarget, EventInsertLeave, (*Engine).doRejectAndStartIdleTimer},
 	{stateHasCursorTarget, EventCursorMovedNormal, (*Engine).doResetIdleTimer},
 
 	// From stateStreamingCompletion
+	{stateStreamingCompletion, EventAccept, (*Engine).doAcceptStreamingCompletion},
 	{stateStreamingCompletion, EventEsc, (*Engine).doRejectStreaming},
+	{stateStreamingCompletion, EventPartialAccept, (*Engine).doPartialAcceptStreaming},
 	{stateStreamingCompletion, EventTextChanged, (*Engine).doRejectStreamingAndDebounce},
 	{stateStreamingCompletion, EventInsertLeave, (*Engine).doRejectStreamingAndStartIdleTimer},
 	{stateStreamingCompletion, EventCursorMovedNormal, (*Engine).doResetIdleTimer},
@@ -283,4 +286,33 @@ func (e *Engine) doRejectStreamingAndStartIdleTimer(event Event) {
 	e.cancelStreaming()
 	e.reject()
 	e.startIdleTimer()
+}
+
+func (e *Engine) doAcceptStreamingCompletion(event Event) {
+	// For token streaming, cancel and keep partial (no continuation support)
+	if e.tokenStreamingState != nil {
+		e.cancelTokenStreamingKeepPartial()
+	}
+
+	// For line streaming, keep streaming running to show cursor prediction when done
+	hasLineStreaming := e.streamingState != nil
+
+	// If we have completions, accept them
+	if len(e.completions) > 0 {
+		// Mark that we accepted during streaming so handleStreamCompleteSimple
+		// knows to compute cursor prediction from accumulated text
+		if hasLineStreaming {
+			e.acceptedDuringStreaming = true
+		}
+		e.state = stateHasCompletion
+		e.acceptCompletion()
+	} else {
+		// No completions to accept
+		if hasLineStreaming {
+			// Keep streaming, will show result when complete
+			e.acceptedDuringStreaming = true
+		} else {
+			e.reject()
+		}
+	}
 }

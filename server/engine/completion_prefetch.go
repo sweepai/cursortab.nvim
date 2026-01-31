@@ -91,39 +91,54 @@ func (e *Engine) handlePrefetchReady(resp *types.CompletionResponse) {
 	// If we were waiting for prefetch due to tab press, continue with cursor target logic
 	if previousPrefetchState == prefetchWaitingForTab {
 		e.handleDeferredCursorTarget()
+		return
 	}
 
-	// If we were waiting for prefetch to show cursor prediction (last stage case),
-	// check if first change is close enough to show completion, otherwise show cursor prediction
+	// If we were waiting for prefetch to show cursor prediction,
+	// but only if we're not currently showing a completion to the user
 	if previousPrefetchState == prefetchWaitingForCursorPrediction {
-		if len(e.prefetchedCompletions) > 0 {
-			comp := e.prefetchedCompletions[0]
-			// Extract old lines from buffer for the completion range
-			bufferLines := e.buffer.Lines()
-			var oldLines []string
-			for i := comp.StartLine; i <= comp.EndLineInc && i-1 < len(bufferLines); i++ {
-				oldLines = append(oldLines, bufferLines[i-1])
-			}
-			// Find the first line that actually differs
-			targetLine := text.FindFirstChangedLine(oldLines, comp.Lines, comp.StartLine-1)
-
-			if targetLine > 0 {
-				distance := abs(targetLine - e.buffer.Row())
-				if distance <= e.config.CursorPrediction.ProximityThreshold {
-					// Close enough - show completion immediately
-					e.tryShowPrefetchedCompletion()
-				} else {
-					// Far away - show cursor prediction to that line
-					e.cursorTarget = &types.CursorPredictionTarget{
-						RelativePath:    e.buffer.Path(),
-						LineNumber:      int32(targetLine),
-						ShouldRetrigger: false, // Will use prefetched data
-					}
-					e.state = stateHasCursorTarget
-					e.buffer.ShowCursorTarget(targetLine)
-				}
-			}
+		// Don't interrupt an active completion - let user accept/reject it first
+		if e.state == stateHasCompletion || e.state == stateStreamingCompletion {
+			return
 		}
+		e.handlePrefetchCursorPrediction()
+	}
+}
+
+// handlePrefetchCursorPrediction checks if prefetch should be shown immediately or as cursor target
+func (e *Engine) handlePrefetchCursorPrediction() {
+	if len(e.prefetchedCompletions) == 0 {
+		return
+	}
+
+	comp := e.prefetchedCompletions[0]
+
+	// Extract old lines for diff analysis
+	bufferLines := e.buffer.Lines()
+	var oldLines []string
+	for i := comp.StartLine; i <= comp.EndLineInc && i-1 < len(bufferLines); i++ {
+		oldLines = append(oldLines, bufferLines[i-1])
+	}
+
+	// Find first changed line
+	targetLine := text.FindFirstChangedLine(oldLines, comp.Lines, comp.StartLine-1)
+	if targetLine <= 0 {
+		return
+	}
+
+	// Check distance to determine if show completion or cursor prediction
+	distance := abs(targetLine - e.buffer.Row())
+	if distance <= e.config.CursorPrediction.ProximityThreshold {
+		e.tryShowPrefetchedCompletion()
+	} else {
+		// Show cursor prediction to the target line
+		e.cursorTarget = &types.CursorPredictionTarget{
+			RelativePath:    e.buffer.Path(),
+			LineNumber:      int32(targetLine),
+			ShouldRetrigger: false,
+		}
+		e.state = stateHasCursorTarget
+		e.buffer.ShowCursorTarget(targetLine)
 	}
 }
 
@@ -152,6 +167,7 @@ func (e *Engine) handlePrefetchError(err error) {
 	if err != nil && !errors.Is(err, context.Canceled) {
 		logger.Error("prefetch error: %v", err)
 	}
+
 	previousPrefetchState := e.prefetchState
 	e.prefetchState = prefetchNone
 
@@ -184,7 +200,6 @@ func (e *Engine) handleDeferredCursorTarget() {
 		}
 
 		// No changes
-		logger.Debug("no changes to completion (deferred prefetched)")
 		e.handleCursorTarget()
 		return
 	}
@@ -199,31 +214,4 @@ func (e *Engine) handleDeferredCursorTarget() {
 
 	e.state = stateIdle
 	e.cursorTarget = nil
-}
-
-// usePrefetchedCompletion attempts to use prefetched data when accepting a cursor target.
-// Returns true if prefetched data was used, false if caller should handle normally.
-func (e *Engine) usePrefetchedCompletion() bool {
-	if len(e.prefetchedCompletions) == 0 {
-		return false
-	}
-
-	// Sync buffer to get updated cursor position after move
-	e.syncBuffer()
-
-	comp := e.prefetchedCompletions[0]
-
-	// Clear prefetch state before processing
-	e.prefetchedCompletions = nil
-	e.prefetchedCursorTarget = nil
-	e.prefetchState = prefetchNone
-
-	if e.processCompletion(comp) {
-		return true
-	}
-
-	// No changes - handle cursor target
-	logger.Debug("no changes to completion (prefetched)")
-	e.handleCursorTarget()
-	return true
 }
