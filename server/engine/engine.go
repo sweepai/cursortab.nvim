@@ -15,6 +15,12 @@ import (
 	"cursortab/types"
 )
 
+// MaxUserActions is the maximum number of user actions to track
+const MaxUserActions = 16
+
+// FileChunkLines is the number of lines to capture from each file for FileChunks context
+const FileChunkLines = 30
+
 type Engine struct {
 	WorkspacePath string
 	WorkspaceID   string
@@ -72,6 +78,11 @@ type Engine struct {
 
 	// Per-file state that persists across file switches (for context restoration)
 	fileStateStore map[string]*FileState
+
+	// User action tracking for RecentUserActions
+	userActions      []*types.UserAction // Ring buffer of last MaxUserActions actions
+	lastBufferLines  []string            // For detecting text changes
+	lastCursorOffset int                 // For cursor movement detection
 }
 
 func NewEngine(provider Provider, buf Buffer, config EngineConfig, clock Clock) (*Engine, error) {
@@ -418,18 +429,20 @@ func (e *Engine) requestCompletion(source types.CompletionSource) {
 	e.syncBuffer()
 
 	req := &types.CompletionRequest{
-		Source:            source,
-		WorkspacePath:     e.WorkspacePath,
-		WorkspaceID:       e.WorkspaceID,
-		FilePath:          e.buffer.Path(),
-		Lines:             e.buffer.Lines(),
-		Version:           e.buffer.Version(),
-		PreviousLines:     e.buffer.PreviousLines(),
-		FileDiffHistories: e.getAllFileDiffHistories(),
-		CursorRow:         e.buffer.Row(),
-		CursorCol:         e.buffer.Col(),
-		ViewportHeight:    e.getViewportHeightConstraint(),
-		LinterErrors:      e.buffer.LinterErrors(),
+		Source:                source,
+		WorkspacePath:         e.WorkspacePath,
+		WorkspaceID:           e.WorkspaceID,
+		FilePath:              e.buffer.Path(),
+		Lines:                 e.buffer.Lines(),
+		Version:               e.buffer.Version(),
+		PreviousLines:         e.buffer.PreviousLines(),
+		FileDiffHistories:     e.getAllFileDiffHistories(),
+		CursorRow:             e.buffer.Row(),
+		CursorCol:             e.buffer.Col(),
+		ViewportHeight:        e.getViewportHeightConstraint(),
+		LinterErrors:          e.buffer.LinterErrors(),
+		RecentBufferSnapshots: e.getRecentBufferSnapshots(e.buffer.Path(), 3),
+		UserActions:           e.getUserActionsForFile(e.buffer.Path()),
 	}
 
 	// Check if provider supports streaming
@@ -738,3 +751,110 @@ func (e *Engine) getViewportHeightConstraint() int {
 	}
 	return 0
 }
+
+// recordUserAction adds an action to the ring buffer, evicting oldest if full
+func (e *Engine) recordUserAction(action *types.UserAction) {
+	if len(e.userActions) >= MaxUserActions {
+		e.userActions = e.userActions[1:] // Evict oldest
+	}
+	e.userActions = append(e.userActions, action)
+}
+
+// getUserActionsForFile returns all tracked actions for the given file path
+func (e *Engine) getUserActionsForFile(filePath string) []*types.UserAction {
+	var result []*types.UserAction
+	for _, a := range e.userActions {
+		if a.FilePath == filePath {
+			result = append(result, a)
+		}
+	}
+	return result
+}
+
+// recordTextChangeAction classifies and records a text change action
+func (e *Engine) recordTextChangeAction() {
+	currentLines := e.buffer.Lines()
+
+	if e.lastBufferLines == nil {
+		e.lastBufferLines = copyLines(currentLines)
+		return
+	}
+
+	// Classify the action based on diff
+	actionType := classifyEdit(e.lastBufferLines, currentLines)
+	if actionType == "" {
+		e.lastBufferLines = copyLines(currentLines)
+		return
+	}
+
+	e.recordUserAction(&types.UserAction{
+		ActionType:  actionType,
+		FilePath:    e.buffer.Path(),
+		LineNumber:  e.buffer.Row(),
+		Offset:      calculateOffset(currentLines, e.buffer.Row(), e.buffer.Col()),
+		TimestampMs: e.clock.Now().UnixMilli(),
+	})
+
+	e.lastBufferLines = copyLines(currentLines)
+}
+
+// recordCursorMovementAction records a cursor movement if position changed
+func (e *Engine) recordCursorMovementAction() {
+	currentOffset := calculateOffset(e.buffer.Lines(), e.buffer.Row(), e.buffer.Col())
+	if currentOffset != e.lastCursorOffset {
+		e.recordUserAction(&types.UserAction{
+			ActionType:  types.ActionCursorMovement,
+			FilePath:    e.buffer.Path(),
+			LineNumber:  e.buffer.Row(),
+			Offset:      currentOffset,
+			TimestampMs: e.clock.Now().UnixMilli(),
+		})
+		e.lastCursorOffset = currentOffset
+	}
+}
+
+// classifyEdit determines the action type based on character count changes
+func classifyEdit(oldLines, newLines []string) types.UserActionType {
+	oldLen := totalChars(oldLines)
+	newLen := totalChars(newLines)
+
+	inserted := max(0, newLen-oldLen)
+	deleted := max(0, oldLen-newLen)
+
+	switch {
+	case deleted == 0 && inserted == 1:
+		return types.ActionInsertChar
+	case deleted == 0 && inserted > 1:
+		return types.ActionInsertSelection
+	case deleted == 1 && inserted == 0:
+		return types.ActionDeleteChar
+	case deleted > 1 && inserted == 0:
+		return types.ActionDeleteSelection
+	case inserted > 0:
+		return types.ActionInsertSelection // Replace = delete + insert
+	default:
+		return ""
+	}
+}
+
+// calculateOffset computes byte offset from line/column position
+func calculateOffset(lines []string, row, col int) int {
+	offset := 0
+	for i := 0; i < row-1 && i < len(lines); i++ {
+		offset += len(lines[i]) + 1 // +1 for newline
+	}
+	if row >= 1 && row <= len(lines) {
+		offset += min(col, len(lines[row-1]))
+	}
+	return offset
+}
+
+// totalChars counts total characters including newlines
+func totalChars(lines []string) int {
+	total := 0
+	for _, line := range lines {
+		total += len(line) + 1
+	}
+	return total
+}
+
