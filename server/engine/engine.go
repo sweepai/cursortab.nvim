@@ -41,6 +41,9 @@ type Buffer interface {
 	MoveCursor(line int, center, mark bool) error
 	LinterErrors() *types.LinterErrors
 	RegisterEventHandler(handler func(event string)) error
+	// Partial accept operations
+	InsertText(line, col int, text string) error // Insert text at position (1-indexed line, 0-indexed col)
+	ReplaceLine(line int, content string) error  // Replace a single line (1-indexed)
 }
 
 // Provider defines the interface that all AI providers must implement.
@@ -205,6 +208,9 @@ type Engine struct {
 	// Original buffer lines when completion was shown (for partial typing optimization)
 	completionOriginalLines []string
 
+	// Current groups for partial accept (stored when showing completion)
+	currentGroups []*text.Group
+
 	// Prefetch state
 	prefetchedCompletions  []*types.Completion
 	prefetchedCursorTarget *types.CursorPredictionTarget
@@ -351,6 +357,7 @@ func (e *Engine) clearState(opts ClearOptions) {
 		e.stagedCompletion = nil
 	}
 	e.completionOriginalLines = nil
+	e.currentGroups = nil
 }
 
 // clearAll clears everything including prefetch and staged completions
@@ -1128,6 +1135,9 @@ func (e *Engine) showCurrentStage() {
 	for i := stage.BufferStart; i <= stage.BufferEnd && i-1 < len(bufferLines); i++ {
 		e.completionOriginalLines = append(e.completionOriginalLines, bufferLines[i-1])
 	}
+
+	// Store groups for partial accept
+	e.currentGroups = stage.Groups
 }
 
 // getStage returns the stage at the given index with type assertion
@@ -1468,6 +1478,9 @@ func (e *Engine) renderStreamedStage(stage *text.Stage) {
 		Lines:      stage.Lines,
 	}}
 	e.cursorTarget = stage.CursorTarget
+
+	// Store groups for partial accept
+	e.currentGroups = stage.Groups
 }
 
 // handleTokenChunk processes a cumulative text chunk from token streaming.
@@ -1516,6 +1529,9 @@ func (e *Engine) handleTokenChunk(accumulatedText string) {
 		Lines:      []string{fullLineText},
 	}}
 	e.completionOriginalLines = []string{oldLine}
+
+	// Store groups for partial accept
+	e.currentGroups = []*text.Group{group}
 }
 
 // handleTokenStreamComplete processes token stream completion when channel closes.

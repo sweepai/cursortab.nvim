@@ -430,6 +430,60 @@ func (b *NvimBuffer) MoveCursor(line int, center bool, mark bool) error {
 	return batch.Execute()
 }
 
+// InsertText inserts text at the specified position (1-indexed line, 0-indexed col)
+func (b *NvimBuffer) InsertText(line, col int, text string) error {
+	if b.client == nil {
+		return fmt.Errorf("nvim client not set")
+	}
+
+	// Get current line content
+	batch := b.client.NewBatch()
+	var lines [][]byte
+	batch.BufferLines(b.id, line-1, line, true, &lines)
+	if err := batch.Execute(); err != nil {
+		return err
+	}
+
+	if len(lines) == 0 {
+		return nil
+	}
+
+	currentLine := string(lines[0])
+	if col > len(currentLine) {
+		col = len(currentLine)
+	}
+
+	// Build new line with inserted text
+	newLine := currentLine[:col] + text + currentLine[col:]
+
+	// Clear UI namespace and apply the change
+	batch = b.client.NewBatch()
+	b.clearNamespace(batch, b.config.NsID)
+	batch.SetBufferLines(b.id, line-1, line, false, [][]byte{[]byte(newLine)})
+
+	// Move cursor to end of inserted text
+	newCol := col + len(text)
+	applyCursorMove(batch, line, newCol, false, true)
+
+	return batch.Execute()
+}
+
+// ReplaceLine replaces a single line (1-indexed)
+func (b *NvimBuffer) ReplaceLine(line int, content string) error {
+	if b.client == nil {
+		return fmt.Errorf("nvim client not set")
+	}
+
+	batch := b.client.NewBatch()
+	b.clearNamespace(batch, b.config.NsID)
+	batch.SetBufferLines(b.id, line-1, line, false, [][]byte{[]byte(content)})
+
+	// Move cursor to end of line
+	applyCursorMove(batch, line, len(content), false, true)
+
+	return batch.Execute()
+}
+
 // LinterErrors retrieves Neovim diagnostics for the current buffer and returns them in provider format
 func (b *NvimBuffer) LinterErrors() *types.LinterErrors {
 	if b.client == nil {

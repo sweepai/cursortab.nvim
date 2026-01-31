@@ -48,7 +48,8 @@ Full configuration with defaults: >lua
     log_level = "info",  -- "trace", "debug", "info", "warn", "error"
 
     keymaps = {
-      accept = "<Tab>",  -- Keymap to accept completion, or false to disable
+      accept = "<Tab>",           -- Keymap to accept completion, or false to disable
+      partial_accept = "<S-Tab>", -- Keymap to partially accept, or false to disable
     },
 
     ui = {
@@ -114,6 +115,14 @@ keymaps.accept                                  *cursortab-config-keymaps-accept
   string (e.g., "<Tab>") or `false` to disable the built-in keymap entirely.
   Default: "<Tab>".
   Set to `false` when managing the accept keymap yourself (e.g., blink.cmp).
+
+keymaps.partial_accept                  *cursortab-config-keymaps-partial-accept*
+
+  The keymap to partially accept completions in insert mode. For inline
+  completions (append_chars), accepts text up to the next word boundary
+  (space or punctuation). For multi-line completions, accepts one line at
+  a time. Can be a keymap string (e.g., "<S-Tab>") or `false` to disable.
+  Default: "<S-Tab>".
 
 ------------------------------------------------------------------------------
 UI OPTIONS                                                *cursortab-config-ui*

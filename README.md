@@ -77,7 +77,8 @@ require("cursortab").setup({
   log_level = "info",  -- "trace", "debug", "info", "warn", "error"
 
   keymaps = {
-    accept = "<Tab>",  -- Keymap to accept completion, or false to disable
+    accept = "<Tab>",           -- Keymap to accept completion, or false to disable
+    partial_accept = "<S-Tab>", -- Keymap to partially accept, or false to disable
   },
 
   ui = {
@@ -313,6 +314,7 @@ require("blink.cmp").setup({
 ## Usage
 
 - **Tab Key**: Navigate to cursor predictions or accept completions
+- **Shift-Tab Key**: Partially accept completions (word-by-word for inline, line-by-line for multi-line)
 - **Esc Key**: Reject current completions
 - The plugin automatically shows jump indicators for predicted cursor positions
 - Visual indicators appear for additions, deletions, and completions

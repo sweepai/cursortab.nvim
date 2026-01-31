@@ -75,6 +75,7 @@ var transitions = []Transition{
 
 	// From stateHasCompletion
 	{stateHasCompletion, EventTab, (*Engine).doAcceptCompletion},
+	{stateHasCompletion, EventPartialAccept, (*Engine).doPartialAcceptCompletion},
 	{stateHasCompletion, EventEsc, (*Engine).doReject},
 	{stateHasCompletion, EventTextChanged, (*Engine).doTextChangeWithCompletion},
 	{stateHasCompletion, EventInsertLeave, (*Engine).doRejectAndStartIdleTimer},
@@ -89,6 +90,7 @@ var transitions = []Transition{
 
 	// From stateStreamingCompletion
 	{stateStreamingCompletion, EventEsc, (*Engine).doRejectStreaming},
+	{stateStreamingCompletion, EventPartialAccept, (*Engine).doPartialAcceptStreaming},
 	{stateStreamingCompletion, EventTextChanged, (*Engine).doRejectStreamingAndDebounce},
 	{stateStreamingCompletion, EventInsertLeave, (*Engine).doRejectStreamingAndStartIdleTimer},
 	{stateStreamingCompletion, EventCursorMovedNormal, (*Engine).doResetIdleTimer},

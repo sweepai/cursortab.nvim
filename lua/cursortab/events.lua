@@ -49,6 +49,21 @@ local function on_escape()
 	return "\27"
 end
 
+-- Partial accept handler (Shift-Tab by default)
+---@return string
+local function on_partial_accept()
+	if ui.has_completion() then
+		-- Suppress the immediate text change and cursor movement caused by partial accept
+		skip_next_text_changed = true
+		skip_next_cursor_moved = true
+		daemon.send_event("partial_accept")
+		return ""
+	else
+		-- Pass through original key
+		return vim.api.nvim_replace_termcodes("<S-Tab>", true, true, true)
+	end
+end
+
 -- Set up all autocommands and keymaps
 function events.setup()
 	-- Prevent duplicate setup
@@ -143,6 +158,11 @@ function events.setup()
 		local accept_key = cfg.keymaps.accept --[[@as string]]
 		vim.keymap.set("i", accept_key, on_tab, { noremap = true, silent = true, expr = true })
 		vim.keymap.set("n", accept_key, on_tab, { noremap = true, silent = true, expr = true })
+	end
+	if cfg.keymaps.partial_accept then
+		local partial_key = cfg.keymaps.partial_accept --[[@as string]]
+		vim.keymap.set("i", partial_key, on_partial_accept, { noremap = true, silent = true, expr = true })
+		vim.keymap.set("n", partial_key, on_partial_accept, { noremap = true, silent = true, expr = true })
 	end
 	vim.keymap.set("n", "<Esc>", on_escape, { noremap = true, silent = true, expr = true })
 

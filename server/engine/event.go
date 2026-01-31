@@ -16,6 +16,7 @@ const (
 	EventInsertEnter       EventType = "insert_enter"
 	EventInsertLeave       EventType = "insert_leave"
 	EventTab               EventType = "tab"
+	EventPartialAccept     EventType = "partial_accept"
 	EventIdleTimeout       EventType = "idle_timeout"
 	EventCompletionReady   EventType = "completion_ready"
 	EventCompletionError   EventType = "completion_error"
@@ -46,6 +47,7 @@ func buildEventTypeMap() map[string]EventType {
 		EventInsertEnter,
 		EventInsertLeave,
 		EventTab,
+		EventPartialAccept,
 		EventIdleTimeout,
 		EventCompletionReady,
 		EventCompletionError,

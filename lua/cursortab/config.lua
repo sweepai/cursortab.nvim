@@ -50,6 +50,7 @@
 
 ---@class CursortabKeymapsConfig
 ---@field accept string|false Accept keymap (e.g., "<Tab>"), or false to disable
+---@field partial_accept string|false Partial accept keymap (e.g., "<S-Tab>"), or false to disable
 
 ---@class CursortabBlinkConfig
 ---@field enabled boolean
@@ -73,6 +74,7 @@ local default_config = {
 
 	keymaps = {
 		accept = "<Tab>", -- Keymap to accept completion, or false to disable
+		partial_accept = "<S-Tab>", -- Keymap to partially accept completion, or false to disable
 	},
 
 	ui = {
