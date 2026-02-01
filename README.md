@@ -388,14 +388,19 @@ cd server && go test ./...
 <summary>Which provider should I use?</summary>
 
 See the [provider feature comparison table](#providers) for capabilities. For
-the best experience, use **Sweep** with the `sweep-next-edit-1.5b` model.
+the best experience:
+
+- If you have a consumer GPU and want to run locally, use **Sweep** with the
+  `sweep-next-edit-1.5b` model for fast local inference
+- Otherwise, use **Sweep API** for the best quality with the hosted
+  `sweep-next-edit-7b` model
 
 </details>
 
 <details>
 <summary>Why are completions slow?</summary>
 
-1. Use a smaller or more quantized model (e.g., Q4 instead of Q8)
+1. Use a smaller or more heavily quantized model (e.g., Q4 instead of Q8)
 2. Decrease `provider.max_tokens` to reduce output length (also limits input
    context)
 
@@ -408,7 +413,7 @@ the best experience, use **Sweep** with the `sweep-next-edit-1.5b` model.
 2. Increase `provider.completion_timeout` (default: 5000ms) to 10000 or more if
    your model is slow
 3. Increase `provider.max_tokens` to give the model more surrounding context
-   (tradeoff: slower completions)
+   (trade-off: slower completions)
 
 </details>
 
