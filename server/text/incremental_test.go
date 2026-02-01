@@ -2,6 +2,7 @@ package text
 
 import (
 	"cursortab/assert"
+	"fmt"
 	"testing"
 )
 
@@ -67,6 +68,7 @@ func TestIncrementalStageBuilder_SingleStage(t *testing.T) {
 		oldLines,
 		1, // baseLineOffset
 		3, // proximityThreshold
+		0, // maxVisibleLines (disabled)
 		0, // viewportTop (disabled)
 		0, // viewportBottom (disabled)
 		1, // cursorRow
@@ -104,6 +106,7 @@ func TestIncrementalStageBuilder_MultipleStages(t *testing.T) {
 		oldLines,
 		1, // baseLineOffset
 		2, // proximityThreshold (small to force multiple stages)
+		0, // maxVisibleLines (disabled)
 		0, // viewportTop
 		0, // viewportBottom
 		1, // cursorRow
@@ -134,6 +137,7 @@ func TestIncrementalStageBuilder_StageFinalizationOnGap(t *testing.T) {
 		oldLines,
 		1,    // baseLineOffset
 		2,    // proximityThreshold
+		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
 		1, // cursorRow
 		"test.go",
@@ -198,6 +202,7 @@ func TestIncrementalStageBuilder_ViewportBoundary(t *testing.T) {
 		oldLines,
 		1,  // baseLineOffset
 		10, // proximityThreshold (high to prevent gap-based splits)
+		0,  // maxVisibleLines (disabled)
 		1,  // viewportTop
 		5,  // viewportBottom (first 5 lines visible)
 		3,  // cursorRow
@@ -260,6 +265,7 @@ func TestIncrementalStageBuilder_BaseLineOffset(t *testing.T) {
 		oldLines,
 		baseLineOffset,
 		3,      // proximityThreshold
+		0,      // maxVisibleLines (disabled)
 		15, 30, // viewport (lines 15-30 visible)
 		22, // cursorRow (in middle of window)
 		"test.ts",
@@ -319,6 +325,7 @@ func TestIncrementalStageBuilder_BaseLineOffsetWithGap(t *testing.T) {
 		oldLines,
 		baseLineOffset,
 		2,      // proximityThreshold
+		0,      // maxVisibleLines (disabled)
 		40, 60, // viewport
 		52, // cursorRow
 		"test.go",
@@ -370,6 +377,7 @@ func TestIncrementalStageBuilder_GapDetectionWithSimilarityMatching(t *testing.T
 		oldLines,
 		baseLineOffset,
 		3,      // proximityThreshold - gaps > 3 should split stages
+		0,      // maxVisibleLines (disabled)
 		40, 80, // viewport
 		58, // cursorRow (in middle)
 		"test.ts",
@@ -438,6 +446,7 @@ func TestIncrementalStageBuilder_SimilarityMatchingToSimilarLines(t *testing.T) 
 		oldLines,
 		baseLineOffset,
 		3,      // proximityThreshold
+		0,      // maxVisibleLines (disabled)
 		15, 35, // viewport
 		23, // cursorRow
 		"test.ts",
@@ -485,6 +494,7 @@ func TestIncrementalStageBuilder_GapDetectionBehavior(t *testing.T) {
 		oldLines,
 		baseLineOffset,
 		2,     // proximityThreshold = 2 (gap > 2 should split)
+		0,     // maxVisibleLines (disabled)
 		5, 20, // viewport
 		12, // cursorRow
 		"test.go",
@@ -533,6 +543,7 @@ func TestIncrementalStageBuilder_ConsecutiveOutputMapsToScatteredLines(t *testin
 		oldLines,
 		baseLineOffset,
 		1,      // proximityThreshold = 1 (very strict - gap > 1 should split)
+		0,      // maxVisibleLines (disabled)
 		45, 60, // viewport
 		52, // cursorRow
 		"test.go",
@@ -844,6 +855,7 @@ func TestIncrementalStageBuilder_WhenModelOutputStartsMidFile(t *testing.T) {
 		oldLines,
 		1,    // baseLineOffset
 		3,    // proximityThreshold
+		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
 		5, // cursorRow
 		"test.go",
@@ -1004,6 +1016,7 @@ func TestIncrementalStageBuilder_DuplicateOutputHandling(t *testing.T) {
 		oldLines,
 		1,    // baseLineOffset
 		3,    // proximityThreshold
+		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
 		1, // cursorRow
 		"test.go",
@@ -1117,6 +1130,7 @@ func TestIncrementalStageBuilder_EmptyInput(t *testing.T) {
 		[]string{}, // empty old lines
 		1,          // baseLineOffset
 		3,          // proximityThreshold
+		0,          // maxVisibleLines (disabled)
 		0, 0,       // viewport disabled
 		1, // cursorRow
 		"test.go",
@@ -1142,6 +1156,7 @@ func TestIncrementalStageBuilder_SingleLine(t *testing.T) {
 		oldLines,
 		1,    // baseLineOffset
 		3,    // proximityThreshold
+		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
 		1, // cursorRow
 		"test.go",
@@ -1188,6 +1203,7 @@ func TestIncrementalStageBuilder_LargeGap(t *testing.T) {
 		oldLines,
 		1,    // baseLineOffset
 		3,    // proximityThreshold
+		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
 		1, // cursorRow
 		"test.go",
@@ -1220,6 +1236,7 @@ func TestIncrementalStageBuilder_ConsecutiveModifications(t *testing.T) {
 		oldLines,
 		1,    // baseLineOffset
 		3,    // proximityThreshold
+		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
 		1, // cursorRow
 		"test.go",
@@ -1299,8 +1316,8 @@ func TestIncrementalDiffBuilder_PrefixMatchWithFollowingAdditions(t *testing.T) 
 	oldLines := []string{"header", "", "px"}
 	builder := NewIncrementalDiffBuilder(oldLines)
 
-	builder.AddLine("header")                           // exact match
-	builder.AddLine("")                                 // exact match
+	builder.AddLine("header")                          // exact match
+	builder.AddLine("")                                // exact match
 	builder.AddLine("px completed with a longer line") // prefix match -> append_chars
 	builder.AddLine("    following line")              // addition
 
@@ -1327,6 +1344,7 @@ func TestIncrementalStageBuilder_LowSimilarityReplacement(t *testing.T) {
 		oldLines,
 		1,    // baseLineOffset
 		10,   // proximityThreshold
+		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
 		1, // cursorRow
 		"test.go",
@@ -1369,8 +1387,9 @@ func TestIncrementalStageBuilder_AppendCharsWithAdditionsBelow(t *testing.T) {
 		oldLines,
 		1,    // baseLineOffset
 		10,   // proximityThreshold
+		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		1,    // cursorRow
+		1, // cursorRow
 		"test.txt",
 	)
 
@@ -1409,8 +1428,9 @@ func TestIncrementalStageBuilder_AdditionsAboveWithAppendChars(t *testing.T) {
 		oldLines,
 		1,    // baseLineOffset
 		10,   // proximityThreshold
+		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		1,    // cursorRow
+		1, // cursorRow
 		"test.txt",
 	)
 
@@ -1449,8 +1469,9 @@ func TestIncrementalStageBuilder_AdditionsAboveAndBelowWithAppendChars(t *testin
 		oldLines,
 		1,    // baseLineOffset
 		10,   // proximityThreshold
+		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		1,    // cursorRow
+		1, // cursorRow
 		"test.txt",
 	)
 
@@ -1492,6 +1513,141 @@ func TestIncrementalStageBuilder_AdditionsAboveAndBelowWithAppendChars(t *testin
 	assert.Equal(t, ChangeAddition, change5.Type, "line 5 should be addition")
 }
 
+// TestIncrementalStageBuilder_MaxVisibleLines tests that maxVisibleLines correctly
+// splits stages in the incremental builder. This reproduces the bug where stage 2
+// gets incorrect buffer coordinates after being split by maxVisibleLines.
+func TestIncrementalStageBuilder_MaxVisibleLines(t *testing.T) {
+	// Scenario from logs:
+	// Original: "import numpy as np", "", "def bubb" (3 lines)
+	// New: adds bubble_sort function (modification + multiple additions)
+	oldLines := []string{"import numpy as np", "", "def bubb"}
+	builder := NewIncrementalStageBuilder(
+		oldLines,
+		1,    // baseLineOffset
+		10,   // proximityThreshold (high to prevent gap splits)
+		2,    // maxVisibleLines - force split after 2 lines
+		0, 0, // viewport disabled
+		3, // cursorRow
+		"test.py",
+	)
+
+	// Feed the model output line by line
+	builder.AddLine("import numpy as np")    // unchanged
+	builder.AddLine("")                      // unchanged
+	builder.AddLine("def bubble_sort(arr):") // modification (was "def bubb")
+	builder.AddLine("    n = len(arr)")      // addition
+	// At this point, stage 1 should have 2 lines (the modification + 1 addition)
+	// and maxVisibleLines should trigger a new stage
+
+	builder.AddLine("    for i in range(n):")           // addition - should be in stage 2
+	builder.AddLine("        for j in range(0, n-i-1):") // addition - should be in stage 2
+
+	result := builder.Finalize()
+	assert.NotNil(t, result, "expected staging result")
+	assert.True(t, len(result.Stages) >= 2, "should have at least 2 stages with maxVisibleLines=2")
+
+	stage1 := result.Stages[0]
+	stage2 := result.Stages[1]
+
+	t.Logf("Stage 1: BufferStart=%d, BufferEnd=%d, Lines=%d", stage1.BufferStart, stage1.BufferEnd, len(stage1.Lines))
+	for i, g := range stage1.Groups {
+		t.Logf("  Group %d: type=%s, BufferLine=%d", i, g.Type, g.BufferLine)
+	}
+	t.Logf("Stage 2: BufferStart=%d, BufferEnd=%d, Lines=%d", stage2.BufferStart, stage2.BufferEnd, len(stage2.Lines))
+	for i, g := range stage2.Groups {
+		t.Logf("  Group %d: type=%s, BufferLine=%d", i, g.Type, g.BufferLine)
+	}
+
+	// Stage 1 should start at buffer line 3 (where "def bubb" is)
+	assert.Equal(t, 3, stage1.BufferStart, "stage 1 should start at buffer line 3")
+
+	// Stage 2 contains pure additions that should be INSERTED after line 3.
+	// For pure additions, BufferStart should be the INSERTION POINT (anchor + 1),
+	// not the anchor itself. This is because virt_lines_above renders above the
+	// specified line, so to render below line 3, we need BufferStart=4.
+	// This matches the non-streaming CreateStages behavior.
+	assert.Equal(t, 4, stage2.BufferStart,
+		fmt.Sprintf("stage 2 BufferStart should be 4 (insertion point after line 3), got %d", stage2.BufferStart))
+
+	// Verify groups have BufferLine=4 (insertion point)
+	for i, g := range stage2.Groups {
+		assert.Equal(t, 4, g.BufferLine,
+			fmt.Sprintf("stage 2 group %d BufferLine should be 4 (insertion point), got %d", i, g.BufferLine))
+	}
+}
+
+// TestIncrementalStageBuilder_MaxVisibleLines_ThreeStages tests the cumulative offset
+// calculation when there are 3+ stages split by maxVisibleLines. This reproduces the
+// bug where stage 3's offset is wrong because pure addition stages (stage 2) were
+// incorrectly counted as replacing 1 line instead of inserting.
+func TestIncrementalStageBuilder_MaxVisibleLines_ThreeStages(t *testing.T) {
+	// Original: 3 lines
+	// Model output: modification + 6 additions = 7 new lines at position 3
+	// With maxVisibleLines=2, we get:
+	//   Stage 1: lines 3-4 (modification + 1 addition) - replaces 1 line with 2
+	//   Stage 2: lines 5-6 (2 additions) - inserts 2 lines
+	//   Stage 3: lines 7-8 (2 additions) - inserts 2 lines
+	oldLines := []string{"import numpy as np", "", "def bubb"}
+	builder := NewIncrementalStageBuilder(
+		oldLines,
+		1,    // baseLineOffset
+		10,   // proximityThreshold (high to prevent gap splits)
+		2,    // maxVisibleLines - force split after 2 lines
+		0, 0, // viewport disabled
+		3, // cursorRow
+		"test.py",
+	)
+
+	// Feed the model output
+	builder.AddLine("import numpy as np")             // unchanged
+	builder.AddLine("")                               // unchanged
+	builder.AddLine("def bubble_sort(arr):")          // modification
+	builder.AddLine("    n = len(arr)")               // addition (stage 1 ends here)
+	builder.AddLine("    for i in range(n):")         // addition (stage 2)
+	builder.AddLine("        for j in range(n-i-1):") // addition (stage 2 ends here)
+	builder.AddLine("            if arr[j] > arr[j+1]:") // addition (stage 3)
+	builder.AddLine("                swap(arr, j)")      // addition (stage 3 ends here)
+
+	result := builder.Finalize()
+	assert.NotNil(t, result, "expected staging result")
+	assert.Equal(t, 3, len(result.Stages), "should have 3 stages with maxVisibleLines=2")
+
+	stage1 := result.Stages[0]
+	stage2 := result.Stages[1]
+	stage3 := result.Stages[2]
+
+	t.Logf("Stage 1: BufferStart=%d, BufferEnd=%d, Lines=%d", stage1.BufferStart, stage1.BufferEnd, len(stage1.Lines))
+	t.Logf("Stage 2: BufferStart=%d, BufferEnd=%d, Lines=%d", stage2.BufferStart, stage2.BufferEnd, len(stage2.Lines))
+	t.Logf("Stage 3: BufferStart=%d, BufferEnd=%d, Lines=%d", stage3.BufferStart, stage3.BufferEnd, len(stage3.Lines))
+
+	// Initial coordinates (before any offset adjustments):
+	// Stage 1: BufferStart=3 (modifying line 3)
+	// Stage 2: BufferStart=4 (pure additions, insertion point after line 3)
+	// Stage 3: BufferStart=4 (pure additions, insertion point after line 3)
+	assert.Equal(t, 3, stage1.BufferStart, "stage 1 BufferStart")
+	assert.Equal(t, 4, stage2.BufferStart, "stage 2 BufferStart (insertion point)")
+	assert.Equal(t, 4, stage3.BufferStart, "stage 3 BufferStart (insertion point, before offset)")
+
+	// Verify stage 2 and 3 are pure additions (all groups are "addition" type)
+	for _, g := range stage2.Groups {
+		assert.Equal(t, "addition", g.Type, "stage 2 should have only addition groups")
+	}
+	for _, g := range stage3.Groups {
+		assert.Equal(t, "addition", g.Type, "stage 3 should have only addition groups")
+	}
+
+	// The key test: IsPureAddition should be detectable from groups
+	// This will be used by advanceStagedCompletion to calculate correct offset
+	stage2IsPureAddition := true
+	for _, g := range stage2.Groups {
+		if g.Type != "addition" {
+			stage2IsPureAddition = false
+			break
+		}
+	}
+	assert.True(t, stage2IsPureAddition, "stage 2 should be detected as pure additions")
+}
+
 // TestIncrementalStageBuilder_BlankLineAdditions verifies that blank lines in the
 // model output are correctly included as additions and not skipped.
 // This tests the scenario where multi-line completions include blank lines between
@@ -1504,8 +1660,9 @@ func TestIncrementalStageBuilder_BlankLineAdditions(t *testing.T) {
 		oldLines,
 		1,    // baseLineOffset
 		10,   // proximityThreshold
+		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		3,    // cursorRow (on partial line)
+		3, // cursorRow (on partial line)
 		"test.go",
 	)
 

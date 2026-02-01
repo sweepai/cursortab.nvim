@@ -296,6 +296,7 @@ func (e *Engine) processCompletion(completion *types.Completion) bool {
 		viewportTop, viewportBottom,
 		completion.StartLine,
 		e.config.CursorPrediction.ProximityThreshold,
+		e.config.MaxVisibleLines,
 		e.buffer.Path(),
 		completion.Lines,
 		originalLines,

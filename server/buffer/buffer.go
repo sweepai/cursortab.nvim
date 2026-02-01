@@ -488,6 +488,27 @@ func (b *NvimBuffer) ReplaceLine(line int, content string) error {
 	return batch.Execute()
 }
 
+// InsertLine inserts a new line at the given position (1-indexed), pushing existing lines down
+func (b *NvimBuffer) InsertLine(line int, content string) error {
+	if b.client == nil {
+		return fmt.Errorf("nvim client not set")
+	}
+
+	// First batch: clear namespace and insert line
+	batch := b.client.NewBatch()
+	b.clearNamespace(batch, b.config.NsID)
+	// Insert at line-1 without removing any lines (start == end)
+	batch.SetBufferLines(b.id, line-1, line-1, false, [][]byte{[]byte(content)})
+	if err := batch.Execute(); err != nil {
+		return err
+	}
+
+	// Second batch: move cursor (must be after line is inserted)
+	cursorBatch := b.client.NewBatch()
+	applyCursorMove(cursorBatch, line, len(content), false, true)
+	return cursorBatch.Execute()
+}
+
 // LinterErrors retrieves Neovim diagnostics for the current buffer and returns them in provider format
 func (b *NvimBuffer) LinterErrors() *types.LinterErrors {
 	if b.client == nil {
@@ -633,7 +654,10 @@ func (b *NvimBuffer) executeLuaFunction(luaCode string, args ...any) {
 
 func applyCursorMove(batch *nvim.Batch, line, col int, center bool, mark bool) {
 	if mark {
-		batch.ExecLua("vim.cmd('normal! m\\'')", nil, nil)
+		// Use vim.fn.setpos to set the ' mark without triggering mode changes
+		// (normal! m' would exit insert mode and cause ModeChanged events)
+		// The mark name "''" means: ' prefix for marks + ' as the mark name
+		batch.ExecLua("vim.fn.setpos(\"''\", vim.fn.getpos('.'))", nil, nil)
 	}
 	batch.SetWindowCursor(0, [2]int{line, col})
 	if center {

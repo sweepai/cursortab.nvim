@@ -291,6 +291,146 @@ func TestPartialAccept_AdditionGroup(t *testing.T) {
 	assert.Equal(t, 3, eng.completions[0].EndLineInc, "updated end line for addition")
 }
 
+// TestPartialAccept_AppendCharsWithAddition tests that when a multi-line stage
+// has an append_chars line followed by addition lines, completing the append_chars
+// line transitions to the addition lines (not skipping them).
+func TestPartialAccept_AppendCharsWithAddition(t *testing.T) {
+	buf := newMockBuffer()
+	// Buffer: line 3 is "def bubble_sort(arr):" (already complete after partial accepts)
+	buf.lines = []string{"import numpy as np", "", "def bubble_sort(arr):"}
+	buf.row = 3
+	buf.col = 21 // At end of line
+	prov := newMockProvider()
+	clock := newMockClock()
+	eng := createTestEngine(buf, prov, clock)
+
+	// Completion for stage 1: line 3 (append_chars) + line 4 (addition)
+	eng.state = stateHasCompletion
+	eng.completions = []*types.Completion{{
+		StartLine:  3,
+		EndLineInc: 3, // Only replacing line 3, but adding line 4
+		Lines:      []string{"def bubble_sort(arr):", "    n = len(arr)"},
+	}}
+	eng.completionOriginalLines = []string{"def bubble_sort(arr):"}
+
+	// Groups: first is append_chars (complete), second is addition
+	eng.currentGroups = []*text.Group{
+		{
+			Type:       "modification",
+			BufferLine: 3,
+			StartLine:  1,
+			EndLine:    1,
+			Lines:      []string{"def bubble_sort(arr):"},
+			OldLines:   []string{"def bubble_sort(arr):"}, // Same as current - already complete
+			RenderHint: "append_chars",
+			ColStart:   21, // Already at end
+			ColEnd:     21,
+		},
+		{
+			Type:       "addition",
+			BufferLine: 4,
+			StartLine:  2,
+			EndLine:    2,
+			Lines:      []string{"    n = len(arr)"},
+		},
+	}
+
+	// When append_chars line is already complete, partial accept should
+	// transition to the next line (the addition), NOT finalize the stage
+	eng.doPartialAcceptCompletion(Event{Type: EventPartialAccept})
+
+	// After partial accept, the completion should now point to the addition line
+	assert.Equal(t, stateHasCompletion, eng.state, "should still be in HasCompletion")
+	assert.Equal(t, 1, len(eng.completions[0].Lines), "should have 1 remaining line")
+	assert.Equal(t, "    n = len(arr)", eng.completions[0].Lines[0], "remaining line content")
+	assert.Equal(t, 4, eng.completions[0].StartLine, "startLine should be 4")
+}
+
+// TestPartialAccept_StagedCompletion_UsesCurrentGroups tests that during partial
+// accept with a staged completion, we use currentGroups (updated by rerenderPartial)
+// not the stale stage groups. This prevents skipping addition lines when the
+// append_chars group in the stage is stale but currentGroups has been updated.
+func TestPartialAccept_StagedCompletion_UsesCurrentGroups(t *testing.T) {
+	buf := newMockBuffer()
+	// Buffer state after completing append_chars on line 3
+	buf.lines = []string{"import numpy as np", "", "def bubble_sort(arr):"}
+	buf.row = 3
+	buf.col = 21
+	prov := newMockProvider()
+	clock := newMockClock()
+	eng := createTestEngine(buf, prov, clock)
+
+	// Staged completion exists with OLD groups (before rerenderPartial updated them)
+	eng.stagedCompletion = &types.StagedCompletion{
+		Stages: []any{
+			&text.Stage{
+				BufferStart: 3,
+				BufferEnd:   3,
+				Lines:       []string{"def bubble_sort(arr):", "    n = len(arr)"},
+				// These groups are STALE - first group is append_chars for line 3
+				Groups: []*text.Group{
+					{
+						Type:       "modification",
+						BufferLine: 3,
+						StartLine:  1,
+						EndLine:    1,
+						Lines:      []string{"def bubble_sort(arr):"},
+						OldLines:   []string{"def bubb"},
+						RenderHint: "append_chars",
+						ColStart:   8,
+						ColEnd:     21,
+					},
+					{
+						Type:       "addition",
+						BufferLine: 4,
+						StartLine:  2,
+						EndLine:    2,
+						Lines:      []string{"    n = len(arr)"},
+					},
+				},
+			},
+			// Next stage
+			&text.Stage{
+				BufferStart: 5,
+				BufferEnd:   5,
+				Lines:       []string{"    for i in range(n):"},
+				Groups: []*text.Group{{
+					Type:       "addition",
+					BufferLine: 5,
+					Lines:      []string{"    for i in range(n):"},
+				}},
+			},
+		},
+		CurrentIdx: 0,
+	}
+
+	// Current state: append_chars is complete, now showing addition for line 4
+	eng.state = stateHasCompletion
+	eng.completions = []*types.Completion{{
+		StartLine:  4,
+		EndLineInc: 4,
+		Lines:      []string{"    n = len(arr)"},
+	}}
+	eng.completionOriginalLines = []string{} // No original lines since this is an addition
+
+	// currentGroups has been updated by rerenderPartial - just the addition group
+	eng.currentGroups = []*text.Group{{
+		Type:       "addition",
+		BufferLine: 4,
+		StartLine:  1,
+		EndLine:    1,
+		Lines:      []string{"    n = len(arr)"},
+	}}
+
+	// This is the key: partial accept should use currentGroups (addition),
+	// NOT the staged completion's groups (which have stale append_chars first)
+	eng.doPartialAcceptCompletion(Event{Type: EventPartialAccept})
+
+	// Verify the addition line was inserted
+	assert.Equal(t, 4, len(buf.lines), "buffer should have 4 lines after insert")
+	assert.Equal(t, "    n = len(arr)", buf.lines[3], "line 4 should be the addition")
+}
+
 func TestPartialAccept_FinishSyncsBuffer_NonStaged(t *testing.T) {
 	buf := newMockBuffer()
 	buf.lines = []string{"test"}

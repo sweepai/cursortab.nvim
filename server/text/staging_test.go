@@ -64,25 +64,22 @@ func TestJoinLines(t *testing.T) {
 }
 
 func TestCreateStages_PureAdditionsPreservesEmptyLines(t *testing.T) {
-	// Verifies empty lines between additions are preserved in staging
-	oldLines := []string{"import numpy as np", ""}
-	newLines := []string{"import numpy as np", "", "def f1():", "    pass", "", "def f2():", "    pass"}
+	oldLines := []string{"line 1", ""}
+	newLines := []string{"line 1", "", "block A:", "    content", "", "block B:", "    content"}
 
 	text1 := JoinLines(oldLines)
 	text2 := JoinLines(newLines)
 	diff := ComputeDiff(text1, text2)
 
-	result := CreateStages(diff, 1, 1, 50, 1, 3, "test.py", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.True(t, len(result.Stages) >= 1, "should have at least 1 stage")
 
 	stage := result.Stages[0]
 
-	// Stage should have 5 changes (lines 3-7 of new text = stage lines 1-5)
 	assert.Equal(t, 5, len(stage.Changes), "stage should have 5 changes")
 
-	// Stage line 3 should be the empty line (new line 5)
 	line3Change, exists := stage.Changes[3]
 	assert.True(t, exists, "should have change at stage line 3")
 	if exists {
@@ -90,7 +87,6 @@ func TestCreateStages_PureAdditionsPreservesEmptyLines(t *testing.T) {
 		assert.Equal(t, "", line3Change.Content, "stage line 3 should be empty string")
 	}
 
-	// Groups should cover all 5 stage lines with no gaps
 	totalLinesInGroups := 0
 	for _, g := range stage.Groups {
 		totalLinesInGroups += g.EndLine - g.StartLine + 1
@@ -99,21 +95,18 @@ func TestCreateStages_PureAdditionsPreservesEmptyLines(t *testing.T) {
 }
 
 func TestCreateStages_MultipleAdditionsWithEmptyLineSeparators(t *testing.T) {
-	// Multiple function additions separated by empty lines
-	// Buffer: ["import numpy as np", ""] (2 lines)
-	// Completion: 10 lines with 3 functions separated by empty lines
-	oldLines := []string{"import numpy as np", ""}
+	oldLines := []string{"header line", ""}
 	newLines := []string{
-		"import numpy as np",
+		"header line",
 		"",
-		"def calculate_distance(x1, y1, x2, y2):",
-		"    return np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)",
+		"block 1:",
+		"    line a",
 		"",
-		"def calculate_angle(x1, y1, x2, y2):",
-		"    return np.arctan2(y2 - y1, x2 - x1)",
+		"block 2:",
+		"    line b",
 		"",
-		"def calculate_distance_and_angle(x1, y1, x2, y2):",
-		"    distance = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)",
+		"block 3:",
+		"    line c",
 	}
 
 	text1 := JoinLines(oldLines)
@@ -121,24 +114,19 @@ func TestCreateStages_MultipleAdditionsWithEmptyLineSeparators(t *testing.T) {
 
 	diff := ComputeDiff(text1, text2)
 
-	// Should have 8 additions (lines 3-10), lines 1-2 are equal
 	assert.Equal(t, 8, len(diff.Changes), "should have 8 additions")
 
-	// Create stages as production does
-	result := CreateStages(diff, 1, 1, 50, 1, 3, "test.py", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.True(t, len(result.Stages) >= 1, "should have at least 1 stage")
 
 	stage := result.Stages[0]
 
-	// Stage should have 8 changes (additions at lines 3-10)
 	assert.Equal(t, 8, len(stage.Changes), "stage should have 8 changes")
 
-	// Stage should have 8 lines of content
 	assert.Equal(t, 8, len(stage.Lines), "stage should have 8 lines")
 
-	// Empty lines at positions 3 and 6 of stage content (new lines 5 and 8)
 	line3Change, exists := stage.Changes[3]
 	assert.True(t, exists, "should have change at stage line 3")
 	if exists {
@@ -151,7 +139,6 @@ func TestCreateStages_MultipleAdditionsWithEmptyLineSeparators(t *testing.T) {
 		assert.Equal(t, "", line6Change.Content, "stage line 6 should be empty")
 	}
 
-	// Groups should cover all 8 lines with no gaps
 	totalLinesInGroups := 0
 	for _, g := range stage.Groups {
 		totalLinesInGroups += g.EndLine - g.StartLine + 1
@@ -161,7 +148,7 @@ func TestCreateStages_MultipleAdditionsWithEmptyLineSeparators(t *testing.T) {
 
 func TestCreateStages_EmptyDiff(t *testing.T) {
 	diff := &DiffResult{Changes: map[int]LineChange{}}
-	stages := CreateStages(diff, 10, 1, 50, 1, 3, "test.go", []string{}, []string{})
+	stages := CreateStages(diff, 10, 1, 50, 1, 3, 0, "test.go", []string{}, []string{})
 
 	assert.Nil(t, stages, "stages for empty diff")
 }
@@ -182,7 +169,7 @@ func TestCreateStages_SingleCluster(t *testing.T) {
 		oldLines[i] = "line"
 	}
 
-	result := CreateStages(diff, 10, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 10, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	// Single cluster still returns a result with 1 stage
 	assert.NotNil(t, result, "result for single cluster")
@@ -207,7 +194,7 @@ func TestCreateStages_TwoClusters(t *testing.T) {
 	}
 
 	// Cursor at line 15, baseLineOffset=1, so cluster 10-11 is closer
-	result := CreateStages(diff, 15, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 15, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.Len(t, 2, result.Stages, "stages")
@@ -248,7 +235,7 @@ func TestCreateStages_CursorDistanceSorting(t *testing.T) {
 		oldLines[i] = "content"
 	}
 
-	result := CreateStages(diff, 22, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 22, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.Len(t, 3, result.Stages, "stages")
@@ -274,7 +261,7 @@ func TestCreateStages_ViewportPartitioning(t *testing.T) {
 	}
 
 	// Cursor at 10, viewport 1-50
-	result := CreateStages(diff, 10, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 10, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.Len(t, 2, result.Stages, "stages")
@@ -303,7 +290,7 @@ func TestCreateStages_ProximityGrouping(t *testing.T) {
 		oldLines[i] = "content"
 	}
 
-	result := CreateStages(diff, 10, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 10, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	// Gap between 10->12 is 2, 12->14 is 2 - all within threshold
 	// Now returns 1 stage (always returns stages)
@@ -328,7 +315,7 @@ func TestCreateStages_ProximityGrouping_SplitByGap(t *testing.T) {
 		oldLines[i] = "content"
 	}
 
-	result := CreateStages(diff, 10, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 10, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.Len(t, 2, result.Stages, "stages (gap > threshold)")
@@ -358,7 +345,7 @@ func TestCreateStages_WithBaseLineOffset(t *testing.T) {
 	}
 
 	// baseLineOffset=50, so diff line 1 = buffer line 50, diff line 10 = buffer line 59
-	result := CreateStages(diff, 55, 1, 100, 50, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 55, 1, 100, 50, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.Len(t, 2, result.Stages, "stages")
@@ -381,7 +368,7 @@ func TestCreateStages_GroupsComputed(t *testing.T) {
 	newLines := []string{"new1", "new2", "", "", "", "", "", "", "", "new10"}
 	oldLines := []string{"old1", "old2", "", "", "", "", "", "", "", "old10"}
 
-	result := CreateStages(diff, 1, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.Len(t, 2, result.Stages, "stages")
@@ -402,7 +389,7 @@ func TestGroupChangesIntoStages(t *testing.T) {
 	}
 
 	lineNumbers := []int{5, 6, 7, 20, 21}
-	stages := groupChangesIntoStages(diff, lineNumbers, 3, 1)
+	stages := groupChangesIntoStages(diff, lineNumbers, 3, 0, 1)
 
 	assert.Len(t, 2, stages, "stages")
 
@@ -418,7 +405,7 @@ func TestGroupChangesIntoStages(t *testing.T) {
 
 func TestGroupChangesIntoStages_EmptyInput(t *testing.T) {
 	diff := &DiffResult{Changes: map[int]LineChange{}}
-	stages := groupChangesIntoStages(diff, []int{}, 3, 1)
+	stages := groupChangesIntoStages(diff, []int{}, 3, 0, 1)
 
 	assert.Nil(t, stages, "stages for empty input")
 }
@@ -442,7 +429,7 @@ func TestCreateStages_WithInsertions(t *testing.T) {
 	oldLines := []string{"line1", "line2", "line3"}
 
 	// Gap between line 2 and line 5 is 3, with threshold 2 they should be separate
-	result := CreateStages(diff, 1, 1, 50, 1, 2, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 50, 1, 2, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.Len(t, 2, result.Stages, "stages for separated insertions")
@@ -477,7 +464,7 @@ func TestCreateStages_WithDeletions(t *testing.T) {
 	}
 
 	// Gap is large (10-2=8), should create 2 stages
-	result := CreateStages(diff, 1, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.Len(t, 2, result.Stages, "stages for separated deletions")
@@ -514,7 +501,7 @@ func TestCreateStages_MixedInsertionDeletion(t *testing.T) {
 	}
 
 	// Large gap (15-2=13), should create 2 stages
-	result := CreateStages(diff, 1, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.Len(t, 2, result.Stages, "stages")
@@ -663,7 +650,7 @@ func TestCreateStages_CumulativeOffsetScenario(t *testing.T) {
 	}
 
 	// Large gap (20-3=17), should create 2 stages
-	result := CreateStages(diff, 1, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.Len(t, 2, result.Stages, "stages for insertions + distant modification")
@@ -692,7 +679,7 @@ func TestCreateStages_AllDeletions(t *testing.T) {
 	oldLines := []string{"line1", "deleted1", "deleted2", "line4", "line5"}
 
 	// Deletions are at same location, should form single cluster
-	result := CreateStages(diff, 1, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	// Single cluster = 1 stage
 	assert.NotNil(t, result, "result for single cluster of deletions")
@@ -769,7 +756,7 @@ func TestStageGroups_ShouldNotExceedStageContent(t *testing.T) {
 
 	// Create stages with proximity threshold of 3
 	// Gap between line 17 and 41 is 24, so they should be in separate clusters
-	result := CreateStages(diff, 1, 1, 100, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 100, 1, 3, 0, "test.go", newLines, oldLines)
 
 	// Should have at least 2 stages (may have more due to viewport partitioning)
 	assert.NotNil(t, result, "result")
@@ -881,7 +868,7 @@ func TestCreateStages_AdditionsAtEndOfFile(t *testing.T) {
 	}
 
 	// Cursor at line 1 (far from changes), viewport covers all
-	result := CreateStages(diff, 1, 1, 30, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 30, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.True(t, len(result.Stages) >= 1, "should have at least 1 stage")
@@ -1016,7 +1003,7 @@ func TestCreateStages_EmptyNewLines(t *testing.T) {
 	oldLines := []string{}
 
 	// Should not panic, should return result with empty Lines in stages
-	result := CreateStages(diff, 3, 1, 20, 1, 2, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 3, 1, 20, 1, 2, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result should not be nil")
 	assert.True(t, len(result.Stages) >= 1, "should have stages")
@@ -1119,7 +1106,7 @@ func TestCreateStages_PartiallyVisibleSingleCluster_FarFromCursor(t *testing.T) 
 	}
 
 	// Cursor at line 5 (far from cluster at 45-55), viewport 1-50 (cluster partially visible)
-	result := CreateStages(diff, 5, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 5, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	// Single cluster that's partially visible but far from cursor
 	assert.NotNil(t, result, "should create staging result")
@@ -1152,7 +1139,7 @@ func TestCreateStages_PartiallyVisibleSingleCluster_CloseToCursor(t *testing.T) 
 	}
 
 	// Cursor at line 47, viewport 1-50
-	result := CreateStages(diff, 47, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 47, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "should create staging result for partially visible cluster")
 }
@@ -1176,7 +1163,7 @@ func TestCreateStages_SingleClusterEntirelyOutsideViewport(t *testing.T) {
 	}
 
 	// Cursor at line 10, viewport 1-50, cluster at 100 (entirely outside)
-	result := CreateStages(diff, 10, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 10, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "should create staging result")
 	assert.Equal(t, 1, len(result.Stages), "should have 1 stage")
@@ -1226,7 +1213,7 @@ func TestCreateStages_NoViewportInfo(t *testing.T) {
 	}
 
 	// No viewport info (0, 0), cursor at 50
-	result := CreateStages(diff, 50, 0, 0, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 50, 0, 0, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "should create staging result")
 	assert.Equal(t, 2, len(result.Stages), "should have 2 stages (large gap between 10 and 100)")
@@ -1300,7 +1287,7 @@ func TestStageCoordinates_ModificationHasCorrectMapping(t *testing.T) {
 	newLines := []string{"line1", "new line 2", "line3", "line4", "line5"}
 	oldLines := []string{"line1", "old line 2", "line3", "line4", "line5"}
 
-	result := CreateStages(diff, 2, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 2, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.True(t, len(result.Stages) >= 1, "should have at least 1 stage")
@@ -1333,7 +1320,7 @@ func TestStageCoordinates_AdditionMapping(t *testing.T) {
 	newLines := []string{"line1", "added line", "line2", "line3"}
 	oldLines := []string{"line1", "line2", "line3"}
 
-	result := CreateStages(diff, 1, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.True(t, len(result.Stages) >= 1, "should have at least 1 stage")
@@ -1393,6 +1380,7 @@ func TestStageIncludesAllLinesFromDeleteInsertBlock(t *testing.T) {
 		0, 0, // no viewport (all visible)
 		1, // baseLineOffset
 		3, // proximityThreshold
+		0, // maxVisibleLines
 		"test.json",
 		newLines,
 		oldLines,
@@ -1450,7 +1438,7 @@ func TestMixedChangesCoordinates(t *testing.T) {
 		"line 5",
 	}
 
-	result := CreateStages(diff, 4, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 4, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.True(t, len(result.Stages) >= 1, "should have at least 1 stage")
@@ -1490,7 +1478,7 @@ func TestGroupsDoNotOverlapWithModifications(t *testing.T) {
 	newLines := []string{"new1", "new2", "added3", "added4", "added5", "added6", "added7", "added8"}
 	oldLines := []string{"", "", "old3", "", "old1"}
 
-	result := CreateStages(diff, 1, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 
@@ -1530,7 +1518,7 @@ func TestBufferLineCalculation(t *testing.T) {
 	oldLines := []string{"line1", "line2", "line3", "old 4", "line5"}
 
 	baseLineOffset := 28
-	result := CreateStages(diff, 30, 1, 100, baseLineOffset, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 30, 1, 100, baseLineOffset, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.True(t, len(result.Stages) >= 1, "should have at least 1 stage")
@@ -1573,7 +1561,7 @@ func TestPureAdditionsAfterExistingContent(t *testing.T) {
 			fmt.Sprintf("Change at key %d should be addition", k))
 	}
 
-	result := CreateStages(diff, 2, 0, 0, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 2, 0, 0, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result should not be nil")
 	assert.True(t, len(result.Stages) >= 1, "should have at least 1 stage")
@@ -1602,7 +1590,7 @@ func TestMixedDeletionAndAdditions(t *testing.T) {
 
 	assert.True(t, len(diff.Changes) >= 1, fmt.Sprintf("Expected at least 1 change, got %d", len(diff.Changes)))
 
-	result := CreateStages(diff, 1, 1, 100, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 100, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result should not be nil")
 	assert.True(t, len(result.Stages) >= 1, "should have at least 1 stage")
@@ -1650,6 +1638,7 @@ func TestShortBufferDiffComputation(t *testing.T) {
 		1, 100, // viewport
 		baseLineOffset,
 		3, // proximityThreshold
+		0, // maxVisibleLines
 		"test.ts",
 		newLines,
 		oldLines,
@@ -1700,6 +1689,7 @@ func TestEmptyOldContent(t *testing.T) {
 		1, 100, // viewport
 		baseLineOffset,
 		3, // proximityThreshold
+		0, // maxVisibleLines
 		"test.ts",
 		newLines,
 		oldLines,
@@ -1753,6 +1743,7 @@ func TestLeadingEmptyLineDeletion(t *testing.T) {
 		1, 100, // viewport
 		1, // baseLineOffset
 		3, // proximityThreshold
+		0, // maxVisibleLines
 		"test.go",
 		newLines,
 		oldLines,
@@ -1795,7 +1786,7 @@ func TestStageGroupBounds(t *testing.T) {
 	}
 	oldLines := []string{"old1", "old2", "old3"}
 
-	result := CreateStages(diff, 1, 1, 50, 1, 3, "test.go", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 50, 1, 3, 0, "test.go", newLines, oldLines)
 
 	assert.NotNil(t, result, "result")
 	assert.True(t, len(result.Stages) >= 2, "should have at least 2 stages (gap between 3 and 20)")
@@ -1835,7 +1826,7 @@ func TestCreateStages_PureAdditionsGroupBufferLineConsistency(t *testing.T) {
 	newLines := []string{"added line"}
 	oldLines := []string{""}
 
-	result := CreateStages(diff, 1, 1, 50, 4, 3, "test.txt", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 50, 4, 3, 0, "test.txt", newLines, oldLines)
 
 	assert.NotNil(t, result, "result should not be nil")
 	assert.Equal(t, 1, len(result.Stages), "should have 1 stage")
@@ -1916,7 +1907,7 @@ func TestCreateStages_PureAdditionsMultipleBaseOffsets(t *testing.T) {
 			newLines := []string{"new line"}
 			oldLines := []string{""}
 
-			result := CreateStages(diff, 1, 1, 200, tc.baseLineOffset, 3, "test.txt", newLines, oldLines)
+			result := CreateStages(diff, 1, 1, 200, tc.baseLineOffset, 3, 0, "test.txt", newLines, oldLines)
 
 			assert.NotNil(t, result, "result should not be nil")
 			assert.Equal(t, 1, len(result.Stages), "should have 1 stage")
@@ -1953,7 +1944,7 @@ func TestCreateStages_MixedAdditionsAndModifications(t *testing.T) {
 	newLines := []string{"modified", "added after"}
 	oldLines := []string{"old"}
 
-	result := CreateStages(diff, 1, 1, 50, 10, 3, "test.txt", newLines, oldLines)
+	result := CreateStages(diff, 1, 1, 50, 10, 3, 0, "test.txt", newLines, oldLines)
 
 	assert.NotNil(t, result, "result should not be nil")
 	assert.Equal(t, 1, len(result.Stages), "should have 1 stage")
@@ -1999,7 +1990,7 @@ func TestCreateStages_CursorTargetPointsToEndOfNewContent(t *testing.T) {
 	newLines := []string{"line1", "line2", "line3 extended", "added line 4", "added line 5", "added line 6", "added line 7", "added line 8", "added line 9", "added line 10"}
 	oldLines := []string{"line1", "line2", "line3"}
 
-	result := CreateStages(diff, 3, 1, 50, 1, 3, "test.txt", newLines, oldLines)
+	result := CreateStages(diff, 3, 1, 50, 1, 3, 0, "test.txt", newLines, oldLines)
 
 	assert.NotNil(t, result, "result should not be nil")
 	assert.Equal(t, 1, len(result.Stages), "should have 1 stage")
@@ -2013,4 +2004,60 @@ func TestCreateStages_CursorTargetPointsToEndOfNewContent(t *testing.T) {
 	expectedCursorTargetLine := stage.BufferStart + len(stage.Lines) - 1 // 3 + 8 - 1 = 10
 	assert.Equal(t, int32(expectedCursorTargetLine), stage.CursorTarget.LineNumber,
 		"cursor target should point to end of new content, not old buffer end")
+}
+
+// TestCreateStages_MaxVisibleLines tests that maxVisibleLines correctly splits stages.
+// This reproduces the scenario from the bug where stage 2 has incorrect coordinates.
+func TestCreateStages_MaxVisibleLines(t *testing.T) {
+	// Scenario from logs:
+	// Original: "import numpy as np", "", "def bubb" (3 lines)
+	// New: adds bubble_sort function (modification + multiple additions)
+	oldLines := []string{"import numpy as np", "", "def bubb"}
+	newLines := []string{
+		"import numpy as np",
+		"",
+		"def bubble_sort(arr):",
+		"    n = len(arr)",
+		"    for i in range(n):",
+		"        for j in range(0, n-i-1):",
+	}
+
+	text1 := JoinLines(oldLines)
+	text2 := JoinLines(newLines)
+	diff := ComputeDiff(text1, text2)
+
+	// maxVisibleLines=2 should split into stages
+	result := CreateStages(diff, 3, 1, 50, 1, 3, 2, "test.py", newLines, oldLines)
+
+	assert.NotNil(t, result, "result should not be nil")
+	assert.True(t, len(result.Stages) >= 2, "should have at least 2 stages with maxLines=2")
+
+	// Stage 1: should contain the modification at line 3 + 1 addition (2 lines total)
+	stage1 := result.Stages[0]
+	t.Logf("Stage 1: BufferStart=%d, BufferEnd=%d, Lines=%d", stage1.BufferStart, stage1.BufferEnd, len(stage1.Lines))
+	for i, g := range stage1.Groups {
+		t.Logf("  Group %d: type=%s, BufferLine=%d, Lines=%v", i, g.Type, g.BufferLine, g.Lines)
+	}
+
+	// Stage 2: should contain pure additions (for loops)
+	stage2 := result.Stages[1]
+	t.Logf("Stage 2: BufferStart=%d, BufferEnd=%d, Lines=%d", stage2.BufferStart, stage2.BufferEnd, len(stage2.Lines))
+	for i, g := range stage2.Groups {
+		t.Logf("  Group %d: type=%s, BufferLine=%d, Lines=%v", i, g.Type, g.BufferLine, g.Lines)
+	}
+
+	// Stage 1 should start at buffer line 3 (where "def bubb" is)
+	assert.Equal(t, 3, stage1.BufferStart, "stage 1 should start at buffer line 3")
+
+	// Stage 2 contains pure additions that come AFTER the original content
+	// Since original file has 3 lines, additions go after line 3
+	// Stage 2's BufferStart should be 3 (anchored to last line where additions are inserted)
+	// or 4 if counting as "after line 3"
+	assert.True(t, stage2.BufferStart >= 3, "stage 2 BufferStart should be >= 3 (after original content)")
+
+	// Verify groups have correct BufferLine values
+	for _, g := range stage2.Groups {
+		assert.True(t, g.BufferLine >= 3,
+			fmt.Sprintf("stage 2 group BufferLine should be >= 3, got %d", g.BufferLine))
+	}
 }

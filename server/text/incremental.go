@@ -164,6 +164,7 @@ type IncrementalStageBuilder struct {
 	OldLines           []string
 	BaseLineOffset     int // Where the diff range starts in the buffer (1-indexed)
 	ProximityThreshold int
+	MaxVisibleLines    int // Max visible lines per completion (0 to disable)
 	ViewportTop        int
 	ViewportBottom     int
 	CursorRow          int
@@ -182,6 +183,7 @@ func NewIncrementalStageBuilder(
 	oldLines []string,
 	baseLineOffset int,
 	proximityThreshold int,
+	maxVisibleLines int,
 	viewportTop, viewportBottom int,
 	cursorRow int,
 	filePath string,
@@ -190,6 +192,7 @@ func NewIncrementalStageBuilder(
 		OldLines:             oldLines,
 		BaseLineOffset:       baseLineOffset,
 		ProximityThreshold:   proximityThreshold,
+		MaxVisibleLines:      maxVisibleLines,
 		ViewportTop:          viewportTop,
 		ViewportBottom:       viewportBottom,
 		CursorRow:            cursorRow,
@@ -247,11 +250,19 @@ func (b *IncrementalStageBuilder) AddLine(line string) *Stage {
 }
 
 // shouldStartNewStage determines if we need to start a new stage based on
-// BUFFER LINE gaps (not new line numbers). This ensures stages split when
-// changes map to far-apart positions in the original file.
+// BUFFER LINE gaps (not new line numbers), MaxVisibleLines limit, and viewport boundaries.
+// This ensures stages split when changes map to far-apart positions in the original file.
 func (b *IncrementalStageBuilder) shouldStartNewStage(bufferLine int, isInViewport bool) bool {
 	if b.currentStage == nil {
 		return false // First change will be handled by starting new stage
+	}
+
+	// Check MaxVisibleLines limit
+	if b.MaxVisibleLines > 0 {
+		stageLineCount := b.currentStage.endLine - b.currentStage.startLine + 1
+		if stageLineCount >= b.MaxVisibleLines {
+			return true
+		}
 	}
 
 	// Check buffer line gap (not new line gap!)
@@ -317,32 +328,58 @@ func (b *IncrementalStageBuilder) finalizeCurrentStage() *Stage {
 		}
 	}
 
-	// Find OLD line range using the LineMapping from streaming.
-	// For matched lines, use the matched old line number.
-	// For unmatched lines (-1), use the new line position as estimate.
-	// This handles the case where low-similarity replacements were marked as
-	// additions during streaming but should be modifications.
+	// Find OLD line range using rawChanges and LineMapping.
+	// For changes with explicit OldLineNum (including additions anchored to a line), use that.
+	// For unmatched lines, fall back to the LineMapping or sequential position.
 	minOld := -1
 	maxOld := -1
-	for j := newStartLine; j <= newEndLine; j++ {
-		if j <= 0 {
-			continue
-		}
-		var oldLine int
-		if j-1 < len(b.diffBuilder.LineMapping.NewToOld) {
-			oldLine = b.diffBuilder.LineMapping.NewToOld[j-1]
-		}
-		if oldLine <= 0 {
-			// Unmatched line - use sequential position as fallback
-			// New line N should correspond to old line N (assuming no prior net insertions)
-			oldLine = j
-		}
-		if oldLine > 0 && oldLine <= len(b.OldLines) {
-			if minOld == -1 || oldLine < minOld {
-				minOld = oldLine
+
+	// First, check rawChanges for explicit old line anchors
+	for lineNum, change := range stage.rawChanges {
+		if change.OldLineNum > 0 && change.OldLineNum <= len(b.OldLines) {
+			if minOld == -1 || change.OldLineNum < minOld {
+				minOld = change.OldLineNum
 			}
-			if oldLine > maxOld {
-				maxOld = oldLine
+			if change.OldLineNum > maxOld {
+				maxOld = change.OldLineNum
+			}
+		} else if change.Type == ChangeAddition && change.OldLineNum == -1 {
+			// Pure addition without anchor - use the last old line as anchor
+			// This handles additions that extend beyond the original content
+			lastOldLine := len(b.OldLines)
+			if lastOldLine > 0 {
+				if minOld == -1 || lastOldLine < minOld {
+					minOld = lastOldLine
+				}
+				if lastOldLine > maxOld {
+					maxOld = lastOldLine
+				}
+			}
+		}
+		_ = lineNum // suppress unused warning
+	}
+
+	// Fall back to LineMapping if no anchors found in rawChanges
+	if minOld == -1 {
+		for j := newStartLine; j <= newEndLine; j++ {
+			if j <= 0 {
+				continue
+			}
+			var oldLine int
+			if j-1 < len(b.diffBuilder.LineMapping.NewToOld) {
+				oldLine = b.diffBuilder.LineMapping.NewToOld[j-1]
+			}
+			if oldLine <= 0 {
+				// Unmatched line - use sequential position as fallback
+				oldLine = j
+			}
+			if oldLine > 0 && oldLine <= len(b.OldLines) {
+				if minOld == -1 || oldLine < minOld {
+					minOld = oldLine
+				}
+				if oldLine > maxOld {
+					maxOld = oldLine
+				}
 			}
 		}
 	}
@@ -363,11 +400,26 @@ func (b *IncrementalStageBuilder) finalizeCurrentStage() *Stage {
 	if minOld > 0 {
 		bufferStart = minOld + b.BaseLineOffset - 1
 	}
-	stage.BufferStart = bufferStart
-	stage.BufferEnd = bufferStart + len(stageOldLines) - 1
-	if stage.BufferEnd < stage.BufferStart {
-		stage.BufferEnd = stage.BufferStart
+
+	// Check if this is a pure additions stage (no modifications)
+	hasPureAdditionsOnly := true
+	for _, change := range stage.rawChanges {
+		if change.Type != ChangeAddition {
+			hasPureAdditionsOnly = false
+			break
+		}
 	}
+
+	// For pure additions WITH a valid anchor, the buffer range represents
+	// where the new content will be INSERTED, not the anchor. Additions are inserted
+	// AFTER the anchor line, so we need to add 1 to get the insertion point.
+	// This matches the non-streaming getStageBufferRange behavior.
+	if hasPureAdditionsOnly && minOld > 0 {
+		bufferStart++
+	}
+
+	stage.BufferStart = bufferStart
+	stage.BufferEnd = max(bufferStart+len(stageOldLines)-1, bufferStart)
 
 	// Build changes using the LineMapping from streaming for line correspondence,
 	// then categorize each pair individually. This preserves the ordered prefix

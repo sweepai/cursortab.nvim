@@ -40,6 +40,7 @@ type StagingResult struct {
 //   - viewportTop, viewportBottom: Visible viewport (1-indexed buffer coordinates)
 //   - baseLineOffset: Where the diff range starts in the buffer (1-indexed)
 //   - proximityThreshold: Max gap between changes to be in same stage
+//   - maxLines: Max lines per stage (0 to disable)
 //   - filePath: File path for cursor targets
 //   - newLines: New content lines for extracting stage content
 //   - oldLines: Old content lines for extracting old content in groups
@@ -49,6 +50,7 @@ func CreateStages(
 	viewportTop, viewportBottom int,
 	baseLineOffset int,
 	proximityThreshold int,
+	maxLines int,
 	filePath string,
 	newLines []string,
 	oldLines []string,
@@ -76,8 +78,8 @@ func CreateStages(
 	sort.Ints(outViewChanges)
 
 	// Step 2: Group changes into partial stages
-	inViewStages := groupChangesIntoStages(diff, inViewChanges, proximityThreshold, baseLineOffset)
-	outViewStages := groupChangesIntoStages(diff, outViewChanges, proximityThreshold, baseLineOffset)
+	inViewStages := groupChangesIntoStages(diff, inViewChanges, proximityThreshold, maxLines, baseLineOffset)
+	outViewStages := groupChangesIntoStages(diff, outViewChanges, proximityThreshold, maxLines, baseLineOffset)
 	allStages := append(inViewStages, outViewStages...)
 
 	if len(allStages) == 0 {
@@ -129,10 +131,10 @@ func GetBufferLineForChange(change LineChange, mapKey int, baseLineOffset int, m
 	return mapKey + baseLineOffset - 1
 }
 
-// groupChangesIntoStages groups sorted line numbers into partial Stage structs based on proximity.
-// The returned stages have rawChanges, startLine, endLine, BufferStart, and BufferEnd populated.
-// Other fields are left as zero values to be filled by finalizeStages.
-func groupChangesIntoStages(diff *DiffResult, lineNumbers []int, proximityThreshold int, baseLineOffset int) []*Stage {
+// groupChangesIntoStages groups sorted line numbers into partial Stage structs based on proximity
+// and stage line limits. The returned stages have rawChanges, startLine, endLine, BufferStart, and BufferEnd
+// populated. Other fields are left as zero values to be filled by finalizeStages.
+func groupChangesIntoStages(diff *DiffResult, lineNumbers []int, proximityThreshold int, maxLines int, baseLineOffset int) []*Stage {
 	if len(lineNumbers) == 0 {
 		return nil
 	}
@@ -153,7 +155,10 @@ func groupChangesIntoStages(diff *DiffResult, lineNumbers []int, proximityThresh
 			currentStage.rawChanges[lineNum] = change
 		} else {
 			gap := lineNum - currentStage.endLine
-			if gap <= proximityThreshold {
+			// Check both proximity threshold and stage line limit
+			stageLineCount := currentStage.endLine - currentStage.startLine + 1
+			exceedsMaxLines := maxLines > 0 && stageLineCount >= maxLines
+			if gap <= proximityThreshold && !exceedsMaxLines {
 				currentStage.rawChanges[lineNum] = change
 				if endLine > currentStage.endLine {
 					currentStage.endLine = endLine

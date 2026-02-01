@@ -29,6 +29,7 @@ func (e *Engine) requestCompletion(source types.CompletionSource) {
 		CursorRow:             e.buffer.Row(),
 		CursorCol:             e.buffer.Col(),
 		ViewportHeight:        e.getViewportHeightConstraint(),
+		MaxVisibleLines:       e.config.MaxVisibleLines,
 		LinterErrors:          e.buffer.LinterErrors(),
 		RecentBufferSnapshots: e.getRecentBufferSnapshots(e.buffer.Path(), 3),
 		UserActions:           e.getUserActionsForFile(e.buffer.Path()),
@@ -132,6 +133,7 @@ func (e *Engine) requestPrefetch(source types.CompletionSource, overrideRow int,
 			CursorRow:         overrideRow,
 			CursorCol:         overrideCol,
 			ViewportHeight:    viewportHeight,
+			MaxVisibleLines:   e.config.MaxVisibleLines,
 			LinterErrors:      linterErrors,
 		})
 

@@ -52,6 +52,7 @@ local function start_daemon()
 		behavior = {
 			idle_completion_delay = cfg.behavior.idle_completion_delay,
 			text_change_debounce = cfg.behavior.text_change_debounce,
+			max_visible_lines = cfg.behavior.max_visible_lines,
 			cursor_prediction = {
 				enabled = cfg.behavior.cursor_prediction.enabled,
 				auto_advance = cfg.behavior.cursor_prediction.auto_advance,

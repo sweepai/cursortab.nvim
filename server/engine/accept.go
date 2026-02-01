@@ -144,7 +144,23 @@ func (e *Engine) advanceStagedCompletion() {
 	// Calculate cumulative offset from current stage
 	currentStage := e.getStage(e.stagedCompletion.CurrentIdx)
 	if currentStage != nil {
-		oldLineCount := currentStage.BufferEnd - currentStage.BufferStart + 1
+		// For pure addition stages (all groups are "addition" type), we're inserting
+		// new lines, not replacing existing ones. So oldLineCount should be 0.
+		// For other stages, oldLineCount is the range being replaced.
+		isPureAddition := len(currentStage.Groups) > 0
+		for _, g := range currentStage.Groups {
+			if g.Type != "addition" {
+				isPureAddition = false
+				break
+			}
+		}
+
+		var oldLineCount int
+		if isPureAddition {
+			oldLineCount = 0 // Pure additions insert, they don't replace
+		} else {
+			oldLineCount = currentStage.BufferEnd - currentStage.BufferStart + 1
+		}
 		newLineCount := len(currentStage.Lines)
 		e.stagedCompletion.CumulativeOffset += newLineCount - oldLineCount
 	}
@@ -154,6 +170,18 @@ func (e *Engine) advanceStagedCompletion() {
 
 	// Check if we're done
 	if e.stagedCompletion.CurrentIdx >= len(e.stagedCompletion.Stages) {
+		// Clear prefetch only if it overlaps with the stage just applied.
+		// If prefetch is for a different line range, it can still be used.
+		// Note: Use the resulting line range (StartLine + len(Lines) - 1) since
+		// the completion may add lines beyond EndLineInc.
+		if currentStage != nil && len(e.prefetchedCompletions) > 0 {
+			prefetch := e.prefetchedCompletions[0]
+			prefetchResultEnd := prefetch.StartLine + len(prefetch.Lines) - 1
+			if prefetch.StartLine <= currentStage.BufferEnd && prefetchResultEnd >= currentStage.BufferStart {
+				e.prefetchState = prefetchNone
+				e.prefetchedCompletions = nil
+			}
+		}
 		e.stagedCompletion = nil
 		return
 	}
@@ -165,6 +193,10 @@ func (e *Engine) advanceStagedCompletion() {
 			if stage != nil {
 				stage.BufferStart += e.stagedCompletion.CumulativeOffset
 				stage.BufferEnd += e.stagedCompletion.CumulativeOffset
+
+				for _, group := range stage.Groups {
+					group.BufferLine += e.stagedCompletion.CumulativeOffset
+				}
 
 				if stage.CursorTarget != nil {
 					stage.CursorTarget.LineNumber += int32(e.stagedCompletion.CumulativeOffset)
@@ -247,7 +279,10 @@ func (e *Engine) partialAcceptCompletion() {
 		return
 	}
 
-	groups := e.getCurrentGroups()
+	// Use currentGroups directly, not getCurrentGroups().
+	// During partial accept, rerenderPartial() updates currentGroups with the
+	// current state. The stage's groups are stale after the first partial accept.
+	groups := e.currentGroups
 	if len(groups) == 0 {
 		return
 	}
@@ -280,7 +315,7 @@ func (e *Engine) partialAcceptAppendChars(group *text.Group) {
 	targetLine := e.completions[0].Lines[0]
 
 	if len(currentLine) >= len(targetLine) {
-		e.finalizePartialAccept()
+		e.advanceToNextLineOrFinalize()
 		return
 	}
 
@@ -296,10 +331,34 @@ func (e *Engine) partialAcceptAppendChars(group *text.Group) {
 
 	newLineLen := len(currentLine) + acceptLen
 	if newLineLen >= len(targetLine) {
-		e.finalizePartialAccept()
+		e.advanceToNextLineOrFinalize()
 	} else {
 		e.rerenderPartial()
 	}
+}
+
+// advanceToNextLineOrFinalize handles completion of a line in a multi-line completion.
+// If there are more lines in the current completion, it advances to them.
+// Otherwise, it finalizes the partial accept.
+func (e *Engine) advanceToNextLineOrFinalize() {
+	if len(e.completions) == 0 {
+		e.finalizePartialAccept()
+		return
+	}
+
+	completion := e.completions[0]
+
+	// If there are more lines to process in this completion, advance to them
+	if len(completion.Lines) > 1 {
+		e.completions[0].Lines = completion.Lines[1:]
+		e.completions[0].StartLine++
+		e.completions[0].EndLineInc = e.completions[0].StartLine + len(e.completions[0].Lines) - 1
+		e.rerenderPartial()
+		return
+	}
+
+	// Only one line remaining (or none), finalize
+	e.finalizePartialAccept()
 }
 
 // partialAcceptNextLine accepts line-by-line.
@@ -308,11 +367,25 @@ func (e *Engine) partialAcceptNextLine() {
 		return
 	}
 
+	e.syncBuffer()
+	bufferLines := e.buffer.Lines()
+
 	completion := e.completions[0]
 	firstLine := completion.Lines[0]
 
-	if err := e.buffer.ReplaceLine(completion.StartLine, firstLine); err != nil {
-		logger.Error("partialAcceptNextLine: replace line failed: %v", err)
+	// If target line is beyond buffer end, insert; otherwise replace
+	var err error
+	if completion.StartLine > len(bufferLines) {
+		logger.Debug("partialAcceptNextLine: INSERT line %d (buffer has %d lines), content=%q",
+			completion.StartLine, len(bufferLines), firstLine)
+		err = e.buffer.InsertLine(completion.StartLine, firstLine)
+	} else {
+		logger.Debug("partialAcceptNextLine: REPLACE line %d (buffer has %d lines), content=%q",
+			completion.StartLine, len(bufferLines), firstLine)
+		err = e.buffer.ReplaceLine(completion.StartLine, firstLine)
+	}
+	if err != nil {
+		logger.Error("partialAcceptNextLine: line operation failed: %v", err)
 		return
 	}
 
@@ -401,15 +474,4 @@ func (e *Engine) rerenderPartial() {
 
 	e.currentGroups = groups
 	e.completionOriginalLines = originalLines
-}
-
-// getCurrentGroups returns the groups for the current completion/stage.
-func (e *Engine) getCurrentGroups() []*text.Group {
-	if e.stagedCompletion != nil {
-		stage := e.getStage(e.stagedCompletion.CurrentIdx)
-		if stage != nil {
-			return stage.Groups
-		}
-	}
-	return e.currentGroups
 }

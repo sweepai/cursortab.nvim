@@ -96,7 +96,8 @@ func NewDaemon(config Config) (*Daemon, error) {
 			AutoAdvance:        config.Behavior.CursorPrediction.AutoAdvance,
 			ProximityThreshold: config.Behavior.CursorPrediction.ProximityThreshold,
 		},
-		MaxDiffTokens: config.Provider.MaxDiffHistoryTokens,
+		MaxDiffTokens:   config.Provider.MaxDiffHistoryTokens,
+		MaxVisibleLines: config.Behavior.MaxVisibleLines,
 	}, engine.SystemClock)
 	if err != nil {
 		return nil, err

@@ -49,6 +49,8 @@ type CompletionRequest struct {
 	CursorCol int // 0-indexed
 	// Viewport constraint: only set when staging is disabled (0 = no limit)
 	ViewportHeight int
+	// MaxVisibleLines limits max visible lines per completion (0 = no limit)
+	MaxVisibleLines int
 	// Linter errors if LSP is active
 	LinterErrors *LinterErrors
 	// RecentBufferSnapshots contains snapshots of recently accessed files for cross-file context

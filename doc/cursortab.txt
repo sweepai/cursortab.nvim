@@ -71,6 +71,7 @@ Full configuration with defaults: >lua
     behavior = {
       idle_completion_delay = 50,   -- ms, -1 to disable
       text_change_debounce = 50,    -- ms
+      max_visible_lines = 0,        -- max visible lines per completion, 0 to disable
       cursor_prediction = {
         enabled = true,
         auto_advance = true,
@@ -151,6 +152,12 @@ BEHAVIOR OPTIONS                                    *cursortab-config-behavior*
 
   `text_change_debounce`
       Debounce in milliseconds after text changes before triggering completion.
+
+  `max_visible_lines`
+      Maximum visible lines per completion. When set to a positive value,
+      completions will be split into stages if they exceed this line limit, in
+      addition to the existing proximity threshold and viewport constraints.
+      Set to 0 to disable (default: 0).
 
 behavior.cursor_prediction            *cursortab-config-behavior-cursor-prediction*
 

@@ -43,6 +43,7 @@ func (e *Engine) requestStreamingCompletion(provider LineStreamProvider, req *ty
 			oldLines,
 			windowStart+1, // baseLineOffset (1-indexed)
 			e.config.CursorPrediction.ProximityThreshold,
+			e.config.MaxVisibleLines,
 			viewportTop,
 			viewportBottom,
 			e.buffer.Row(),

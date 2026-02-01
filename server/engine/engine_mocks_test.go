@@ -221,6 +221,20 @@ func (b *mockBuffer) ReplaceLine(line int, content string) error {
 	return nil
 }
 
+func (b *mockBuffer) InsertLine(line int, content string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	// Insert new line at position, pushing existing lines down
+	if line >= 1 && line <= len(b.lines)+1 {
+		newLines := make([]string, len(b.lines)+1)
+		copy(newLines[:line-1], b.lines[:line-1])
+		newLines[line-1] = content
+		copy(newLines[line:], b.lines[line-1:])
+		b.lines = newLines
+	}
+	return nil
+}
+
 // mockBatch implements buffer.Batch
 type mockBatch struct {
 	executed bool

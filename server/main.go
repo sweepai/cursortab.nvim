@@ -22,6 +22,7 @@ type CursorPredictionConfig struct {
 type BehaviorConfig struct {
 	IdleCompletionDelay int                    `json:"idle_completion_delay"` // in milliseconds
 	TextChangeDebounce  int                    `json:"text_change_debounce"`  // in milliseconds
+	MaxVisibleLines     int                    `json:"max_visible_lines"`     // max visible lines per completion (0 to disable)
 	CursorPrediction    CursorPredictionConfig `json:"cursor_prediction"`
 }
 
@@ -83,6 +84,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Behavior.TextChangeDebounce < 0 {
 		return fmt.Errorf("invalid behavior.text_change_debounce %d: must be >= 0", c.Behavior.TextChangeDebounce)
+	}
+	if c.Behavior.MaxVisibleLines < 0 {
+		return fmt.Errorf("invalid behavior.max_visible_lines %d: must be >= 0", c.Behavior.MaxVisibleLines)
 	}
 	if c.Provider.MaxTokens < 0 {
 		return fmt.Errorf("invalid provider.max_tokens %d: must be >= 0", c.Provider.MaxTokens)

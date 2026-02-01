@@ -36,6 +36,7 @@ type Buffer interface {
 	// Partial accept operations
 	InsertText(line, col int, text string) error // Insert text at position (1-indexed line, 0-indexed col)
 	ReplaceLine(line int, content string) error  // Replace a single line (1-indexed)
+	InsertLine(line int, content string) error   // Insert a new line at position (1-indexed)
 }
 
 // Provider defines the interface that all AI providers must implement.
@@ -204,4 +205,5 @@ type EngineConfig struct {
 	TextChangeDebounce  time.Duration
 	CursorPrediction    CursorPredictionConfig
 	MaxDiffTokens       int // Maximum tokens for diff history per file (0 = no limit)
+	MaxVisibleLines     int // Maximum lines per stage (0 = no limit)
 }

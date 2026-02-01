@@ -25,6 +25,7 @@
 ---@class CursortabBehaviorConfig
 ---@field idle_completion_delay integer
 ---@field text_change_debounce integer
+---@field max_visible_lines integer Max visible lines per completion (0 to disable)
 ---@field cursor_prediction CursortabCursorPredictionConfig
 
 ---@class CursortabFIMTokensConfig
@@ -97,6 +98,7 @@ local default_config = {
 	behavior = {
 		idle_completion_delay = 50, -- Delay in ms after being idle in normal mode to trigger completion (-1 to disable)
 		text_change_debounce = 50, -- Debounce in ms after text changed to trigger completion
+		max_visible_lines = 0, -- Max visible lines per completion (0 to disable)
 		cursor_prediction = {
 			enabled = true, -- Show jump indicators after completions
 			auto_advance = true, -- When completion has no changes, show cursor jump to last line
@@ -303,6 +305,9 @@ local function validate_config(cfg)
 		end
 		if cfg.behavior.text_change_debounce and cfg.behavior.text_change_debounce < 0 then
 			error("[cursortab.nvim] behavior.text_change_debounce must be >= 0")
+		end
+		if cfg.behavior.max_visible_lines and cfg.behavior.max_visible_lines < 0 then
+			error("[cursortab.nvim] behavior.max_visible_lines must be >= 0 (0 to disable)")
 		end
 	end
 
