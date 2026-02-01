@@ -25,36 +25,39 @@ func TestIncrementalDiffBuilder_BasicModification(t *testing.T) {
 }
 
 func TestIncrementalDiffBuilder_Addition(t *testing.T) {
+	// During streaming, incremental matching uses similarity to find matches.
+	// Lines that don't match are recorded as additions. The actual change
+	// types are determined at stage finalization using batch diff.
 	oldLines := []string{"line 1", "line 2"}
 	builder := NewIncrementalDiffBuilder(oldLines)
 
 	builder.AddLine("line 1")   // match
-	builder.AddLine("new line") // addition
-	builder.AddLine("line 2")   // match
+	builder.AddLine("new line") // no match found during streaming -> addition
+	builder.AddLine("line 2")   // matches old "line 2"
 
+	// During streaming: 1 addition ("new line")
+	// Note: actual change types are refined at stage finalization
 	assert.Equal(t, 1, len(builder.Changes), "change count")
 
-	// Find the addition
-	found := false
-	for _, change := range builder.Changes {
-		if change.Type == ChangeAddition {
-			assert.Equal(t, "new line", change.Content, "content")
-			found = true
-			break
-		}
-	}
-	assert.True(t, found, "did not find addition change")
+	// Verify the addition
+	change2, ok := builder.Changes[2]
+	assert.True(t, ok, "should have change at line 2")
+	assert.Equal(t, ChangeAddition, change2.Type, "expected addition during streaming")
+	assert.Equal(t, "new line", change2.Content, "added content")
 }
 
 func TestIncrementalDiffBuilder_MultipleAdditions(t *testing.T) {
+	// During streaming, lines that don't match are recorded as additions.
+	// The actual change types are determined at stage finalization using batch diff.
 	oldLines := []string{"a", "b"}
 	builder := NewIncrementalDiffBuilder(oldLines)
 
 	builder.AddLine("a") // match
-	builder.AddLine("x") // addition
-	builder.AddLine("y") // addition
-	builder.AddLine("b") // match
+	builder.AddLine("x") // no match -> addition during streaming
+	builder.AddLine("y") // no match -> addition during streaming
+	builder.AddLine("b") // matches old "b"
 
+	// During streaming: 2 additions ("x", "y")
 	assert.Equal(t, 2, len(builder.Changes), "change count")
 }
 
@@ -1312,6 +1315,246 @@ func TestIncrementalDiffBuilder_PrefixMatchWithFollowingAdditions(t *testing.T) 
 	// Verify the addition
 	change4 := builder.Changes[4]
 	assert.Equal(t, ChangeAddition, change4.Type, "line 4 should be addition")
+}
+
+// TestIncrementalStageBuilder_LowSimilarityReplacement verifies that when we replace
+// content with very different content (low similarity), the stage builder correctly
+// detects it as a modification using batch diff at finalization time.
+// This handles typo correction: "this commt" -> "this commit addresses..."
+func TestIncrementalStageBuilder_LowSimilarityReplacement(t *testing.T) {
+	oldLines := []string{"line1", "", "this commt adress"}
+	builder := NewIncrementalStageBuilder(
+		oldLines,
+		1,    // baseLineOffset
+		10,   // proximityThreshold
+		0, 0, // viewport disabled
+		1, // cursorRow
+		"test.go",
+	)
+
+	// Line 1: exact match
+	builder.AddLine("line1")
+
+	// Line 2: exact match (empty)
+	builder.AddLine("")
+
+	// Line 3: "this commt adress" -> long corrected text
+	// During streaming this may be marked as addition (low similarity),
+	// but at finalization batch diff will correctly identify it as modification
+	// because old line count == new line count.
+	newContent := "this commit addresses the issue of incorrect cursor target calculation in the text"
+	builder.AddLine(newContent)
+
+	result := builder.Finalize()
+	assert.NotNil(t, result, "expected staging result")
+	assert.Equal(t, 1, len(result.Stages), "stage count")
+
+	stage := result.Stages[0]
+	assert.Equal(t, 1, len(stage.Changes), "change count")
+
+	// The change should be a modification (not addition) because equal line counts
+	change, ok := stage.Changes[1] // Line 1 relative to stage
+	assert.True(t, ok, "should have change")
+	assert.Equal(t, ChangeModification, change.Type, "expected modification")
+	assert.Equal(t, "this commt adress", change.OldContent, "old content")
+	assert.Equal(t, newContent, change.Content, "new content")
+}
+
+// TestIncrementalStageBuilder_AppendCharsWithAdditionsBelow verifies that when
+// a partial line is completed (append_chars) and new lines are added below,
+// the completion is correctly typed and additions follow.
+func TestIncrementalStageBuilder_AppendCharsWithAdditionsBelow(t *testing.T) {
+	oldLines := []string{"partial"}
+	builder := NewIncrementalStageBuilder(
+		oldLines,
+		1,    // baseLineOffset
+		10,   // proximityThreshold
+		0, 0, // viewport disabled
+		1,    // cursorRow
+		"test.txt",
+	)
+
+	builder.AddLine("partial content completed")
+	builder.AddLine("new line 1")
+	builder.AddLine("new line 2")
+
+	result := builder.Finalize()
+	assert.NotNil(t, result, "expected staging result")
+	assert.Equal(t, 1, len(result.Stages), "stage count")
+
+	stage := result.Stages[0]
+
+	// First line: append_chars (prefix completion)
+	change1, ok := stage.Changes[1]
+	assert.True(t, ok, "should have change at line 1")
+	assert.Equal(t, ChangeAppendChars, change1.Type, "line 1 should be append_chars")
+	assert.Equal(t, "partial", change1.OldContent, "old content")
+
+	// Lines 2-3: additions
+	change2, ok := stage.Changes[2]
+	assert.True(t, ok, "should have change at line 2")
+	assert.Equal(t, ChangeAddition, change2.Type, "line 2 should be addition")
+
+	change3, ok := stage.Changes[3]
+	assert.True(t, ok, "should have change at line 3")
+	assert.Equal(t, ChangeAddition, change3.Type, "line 3 should be addition")
+}
+
+// TestIncrementalStageBuilder_AdditionsAboveWithAppendChars verifies that when
+// new lines are inserted above and the original line is completed (append_chars),
+// additions come first and the completion is at the end.
+func TestIncrementalStageBuilder_AdditionsAboveWithAppendChars(t *testing.T) {
+	oldLines := []string{"partial"}
+	builder := NewIncrementalStageBuilder(
+		oldLines,
+		1,    // baseLineOffset
+		10,   // proximityThreshold
+		0, 0, // viewport disabled
+		1,    // cursorRow
+		"test.txt",
+	)
+
+	// Model outputs new lines first, then completes the original partial line
+	builder.AddLine("inserted line 1")
+	builder.AddLine("inserted line 2")
+	builder.AddLine("partial content completed")
+
+	result := builder.Finalize()
+	assert.NotNil(t, result, "expected staging result")
+	assert.Equal(t, 1, len(result.Stages), "stage count")
+
+	stage := result.Stages[0]
+
+	// Lines 1-2: additions (inserted above)
+	change1, ok := stage.Changes[1]
+	assert.True(t, ok, "should have change at line 1")
+	assert.Equal(t, ChangeAddition, change1.Type, "line 1 should be addition")
+
+	change2, ok := stage.Changes[2]
+	assert.True(t, ok, "should have change at line 2")
+	assert.Equal(t, ChangeAddition, change2.Type, "line 2 should be addition")
+
+	// Line 3: append_chars (the completed partial line)
+	change3, ok := stage.Changes[3]
+	assert.True(t, ok, "should have change at line 3")
+	assert.Equal(t, ChangeAppendChars, change3.Type, "line 3 should be append_chars")
+	assert.Equal(t, "partial", change3.OldContent, "old content preserved")
+}
+
+// TestIncrementalStageBuilder_AdditionsAboveAndBelowWithAppendChars verifies
+// that additions can appear both above and below a completed line.
+func TestIncrementalStageBuilder_AdditionsAboveAndBelowWithAppendChars(t *testing.T) {
+	oldLines := []string{"middle"}
+	builder := NewIncrementalStageBuilder(
+		oldLines,
+		1,    // baseLineOffset
+		10,   // proximityThreshold
+		0, 0, // viewport disabled
+		1,    // cursorRow
+		"test.txt",
+	)
+
+	// Model outputs: additions above, completed line, additions below
+	builder.AddLine("above 1")
+	builder.AddLine("above 2")
+	builder.AddLine("middle completed")
+	builder.AddLine("below 1")
+	builder.AddLine("below 2")
+
+	result := builder.Finalize()
+	assert.NotNil(t, result, "expected staging result")
+	assert.Equal(t, 1, len(result.Stages), "stage count")
+
+	stage := result.Stages[0]
+
+	// Lines 1-2: additions above
+	change1, ok := stage.Changes[1]
+	assert.True(t, ok, "should have change at line 1")
+	assert.Equal(t, ChangeAddition, change1.Type, "line 1 should be addition")
+
+	change2, ok := stage.Changes[2]
+	assert.True(t, ok, "should have change at line 2")
+	assert.Equal(t, ChangeAddition, change2.Type, "line 2 should be addition")
+
+	// Line 3: append_chars (the completed line)
+	change3, ok := stage.Changes[3]
+	assert.True(t, ok, "should have change at line 3")
+	assert.Equal(t, ChangeAppendChars, change3.Type, "line 3 should be append_chars")
+	assert.Equal(t, "middle", change3.OldContent, "old content preserved")
+
+	// Lines 4-5: additions below
+	change4, ok := stage.Changes[4]
+	assert.True(t, ok, "should have change at line 4")
+	assert.Equal(t, ChangeAddition, change4.Type, "line 4 should be addition")
+
+	change5, ok := stage.Changes[5]
+	assert.True(t, ok, "should have change at line 5")
+	assert.Equal(t, ChangeAddition, change5.Type, "line 5 should be addition")
+}
+
+// TestIncrementalStageBuilder_BlankLineAdditions verifies that blank lines in the
+// model output are correctly included as additions and not skipped.
+// This tests the scenario where multi-line completions include blank lines between
+// blocks of code (e.g., functions or paragraphs).
+func TestIncrementalStageBuilder_BlankLineAdditions(t *testing.T) {
+	// Simulate: user has partial content that gets completed with multiple blocks
+	// separated by blank lines
+	oldLines := []string{"header", "", "func te"}
+	builder := NewIncrementalStageBuilder(
+		oldLines,
+		1,    // baseLineOffset
+		10,   // proximityThreshold
+		0, 0, // viewport disabled
+		3,    // cursorRow (on partial line)
+		"test.go",
+	)
+
+	// Model outputs completed content with blocks separated by blank lines
+	builder.AddLine("header")          // exact match
+	builder.AddLine("")                // exact match (blank)
+	builder.AddLine("func test1() {}") // append_chars (completes "func te")
+	builder.AddLine("    body1")       // addition
+	builder.AddLine("")                // BLANK LINE - should be addition!
+	builder.AddLine("func test2() {}") // addition
+	builder.AddLine("    body2")       // addition
+	builder.AddLine("")                // BLANK LINE - should be addition!
+	builder.AddLine("func test3() {}") // addition
+
+	result := builder.Finalize()
+	assert.NotNil(t, result, "expected staging result")
+	assert.Equal(t, 1, len(result.Stages), "stage count")
+
+	stage := result.Stages[0]
+
+	// Verify all 7 lines (from line 3 onwards) are in the stage
+	assert.Equal(t, 7, len(stage.Lines), "stage should have 7 lines")
+
+	// Verify blank lines are included in changes
+	// Line 1 (relative): "func test1() {}" - append_chars
+	// Line 2 (relative): "    body1" - addition
+	// Line 3 (relative): "" - addition (BLANK LINE)
+	// Line 4 (relative): "func test2() {}" - addition
+	// Line 5 (relative): "    body2" - addition
+	// Line 6 (relative): "" - addition (BLANK LINE)
+	// Line 7 (relative): "func test3() {}" - addition
+
+	// Check that blank lines at relative positions 3 and 6 are additions
+	change3, ok := stage.Changes[3]
+	assert.True(t, ok, "should have change at relative line 3 (blank line)")
+	assert.Equal(t, ChangeAddition, change3.Type, "blank line should be addition")
+	assert.Equal(t, "", change3.Content, "blank line content should be empty")
+
+	change6, ok := stage.Changes[6]
+	assert.True(t, ok, "should have change at relative line 6 (blank line)")
+	assert.Equal(t, ChangeAddition, change6.Type, "blank line should be addition")
+	assert.Equal(t, "", change6.Content, "blank line content should be empty")
+
+	// Verify groups include all lines (no gaps)
+	totalLinesInGroups := 0
+	for _, g := range stage.Groups {
+		totalLinesInGroups += len(g.Lines)
+	}
+	assert.Equal(t, 7, totalLinesInGroups, "groups should cover all 7 lines including blank lines")
 }
 
 // TestLineSimilarity_EdgeCases tests similarity calculation edge cases.

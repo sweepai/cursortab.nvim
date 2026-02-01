@@ -152,6 +152,9 @@ func (b *IncrementalDiffBuilder) findMatchingOldLine(newLine string, _ int) int 
 		return bestIdx + 1
 	}
 
+	// No match found - this will be treated as an addition during streaming.
+	// The actual change type will be determined at stage finalization using
+	// batch diff, which correctly handles equal line counts as modifications.
 	return 0
 }
 
@@ -305,53 +308,139 @@ func (b *IncrementalStageBuilder) finalizeCurrentStage() *Stage {
 
 	stage := b.currentStage
 
-	// Extract content for the stage
+	// Extract NEW content for the stage
 	newStartLine, newEndLine := getStageNewLineRange(stage)
-	var stageLines []string
+	var stageNewLines []string
 	for j := newStartLine; j <= newEndLine && j-1 < len(b.diffBuilder.NewLines); j++ {
 		if j > 0 {
-			stageLines = append(stageLines, b.diffBuilder.NewLines[j-1])
+			stageNewLines = append(stageNewLines, b.diffBuilder.NewLines[j-1])
 		}
 	}
 
-	// Remap changes to relative line numbers and extract old content
-	stageOldLines := make([]string, len(stageLines))
+	// Find OLD line range using the LineMapping from streaming.
+	// For matched lines, use the matched old line number.
+	// For unmatched lines (-1), use the new line position as estimate.
+	// This handles the case where low-similarity replacements were marked as
+	// additions during streaming but should be modifications.
+	minOld := -1
+	maxOld := -1
+	for j := newStartLine; j <= newEndLine; j++ {
+		if j <= 0 {
+			continue
+		}
+		var oldLine int
+		if j-1 < len(b.diffBuilder.LineMapping.NewToOld) {
+			oldLine = b.diffBuilder.LineMapping.NewToOld[j-1]
+		}
+		if oldLine <= 0 {
+			// Unmatched line - use sequential position as fallback
+			// New line N should correspond to old line N (assuming no prior net insertions)
+			oldLine = j
+		}
+		if oldLine > 0 && oldLine <= len(b.OldLines) {
+			if minOld == -1 || oldLine < minOld {
+				minOld = oldLine
+			}
+			if oldLine > maxOld {
+				maxOld = oldLine
+			}
+		}
+	}
+
+	// Extract OLD content for the computed range
+	var stageOldLines []string
+	if minOld > 0 && maxOld > 0 {
+		// Convert 1-indexed old line numbers to 0-indexed array indices
+		startIdx := minOld - 1
+		endIdx := maxOld // exclusive (maxOld is 1-indexed, so maxOld = endIdx exclusive)
+		if startIdx >= 0 && endIdx <= len(b.OldLines) {
+			stageOldLines = b.OldLines[startIdx:endIdx]
+		}
+	}
+
+	// Compute BufferStart from the old line range
+	bufferStart := b.BaseLineOffset
+	if minOld > 0 {
+		bufferStart = minOld + b.BaseLineOffset - 1
+	}
+	stage.BufferStart = bufferStart
+	stage.BufferEnd = bufferStart + len(stageOldLines) - 1
+	if stage.BufferEnd < stage.BufferStart {
+		stage.BufferEnd = stage.BufferStart
+	}
+
+	// Build changes using the LineMapping from streaming for line correspondence,
+	// then categorize each pair individually. This preserves the ordered prefix
+	// matching from incremental diff while getting accurate change types.
+	//
+	// The key insight: batch ComputeDiff optimizes globally and may match lines
+	// out of order, but for code completion we want ordered matching where the
+	// first new line matches the first old line (especially for prefix completion).
+
+	// First, build a set of old lines that are already matched (to avoid double-use)
+	usedOldLines := make(map[int]bool)
+	for j := newStartLine; j <= newEndLine; j++ {
+		if j > 0 && j-1 < len(b.diffBuilder.LineMapping.NewToOld) {
+			oldLine := b.diffBuilder.LineMapping.NewToOld[j-1]
+			if oldLine > 0 {
+				usedOldLines[oldLine] = true
+			}
+		}
+	}
+
 	remappedChanges := make(map[int]LineChange)
-	relativeToBufferLine := make(map[int]int)
+	for i, newLine := range stageNewLines {
+		relativeLine := i + 1 // 1-indexed relative to stage
+		absoluteNewLine := newStartLine + i
 
-	// Compute buffer lines for this stage using getStageBufferRange.
-	// This ensures pure additions get their buffer lines incremented to the insertion point.
-	diffResult := &DiffResult{
-		Changes:      b.diffBuilder.Changes,
-		LineMapping:  b.diffBuilder.LineMapping,
-		OldLineCount: len(b.OldLines),
-		NewLineCount: len(b.diffBuilder.NewLines),
+		// Get the matched old line from streaming's LineMapping
+		var oldLine int
+		var oldContent string
+		if absoluteNewLine > 0 && absoluteNewLine-1 < len(b.diffBuilder.LineMapping.NewToOld) {
+			oldLine = b.diffBuilder.LineMapping.NewToOld[absoluteNewLine-1]
+		}
+		if oldLine <= 0 {
+			// No match during streaming - use sequential position as fallback
+			// BUT only if that old line isn't already matched to another new line
+			fallbackOldLine := absoluteNewLine
+			if fallbackOldLine > 0 && fallbackOldLine <= len(b.OldLines) && !usedOldLines[fallbackOldLine] {
+				oldLine = fallbackOldLine
+			}
+		}
+		if oldLine > 0 && oldLine <= len(b.OldLines) {
+			oldContent = b.OldLines[oldLine-1]
+		}
+
+		// Determine change type
+		var change LineChange
+		if oldLine <= 0 {
+			// No matching old line - this is an addition
+			change = LineChange{
+				Type:       ChangeAddition,
+				OldLineNum: -1,
+				NewLineNum: relativeLine,
+				Content:    newLine,
+			}
+		} else if oldContent == newLine {
+			// Skip if content is identical (matched old line with same content)
+			continue
+		} else {
+			// Modification - categorize the change type
+			changeType, colStart, colEnd := categorizeLineChangeWithColumns(oldContent, newLine)
+			change = LineChange{
+				Type:       changeType,
+				OldLineNum: oldLine - minOld + 1, // Relative to stage's old content
+				NewLineNum: relativeLine,
+				OldContent: oldContent,
+				Content:    newLine,
+				ColStart:   colStart,
+				ColEnd:     colEnd,
+			}
+		}
+		remappedChanges[relativeLine] = change
 	}
-	lineNumToBufferLine := make(map[int]int)
-	getStageBufferRange(stage, b.BaseLineOffset, diffResult, lineNumToBufferLine)
 
-	for lineNum, change := range stage.rawChanges {
-		newLineNum := lineNum
-		if change.NewLineNum > 0 {
-			newLineNum = change.NewLineNum
-		}
-		relativeLine := newLineNum - newStartLine + 1
-		relativeIdx := newLineNum - newStartLine
-
-		if relativeIdx >= 0 && relativeIdx < len(stageOldLines) {
-			stageOldLines[relativeIdx] = change.OldContent
-		}
-
-		if relativeLine > 0 && relativeLine <= len(stageLines) {
-			relativeToBufferLine[relativeLine] = lineNumToBufferLine[lineNum]
-
-			remappedChange := change
-			remappedChange.NewLineNum = relativeLine
-			remappedChanges[relativeLine] = remappedChange
-		}
-	}
-
-	// Compute groups
+	// Compute groups from the batch diff changes
 	groups := GroupChanges(remappedChanges)
 
 	// Find the last modification's relative line for addition positioning
@@ -362,8 +451,9 @@ func (b *IncrementalStageBuilder) finalizeCurrentStage() *Stage {
 			change.Type == ChangeDeleteChars || change.Type == ChangeReplaceChars {
 			if relativeLine > lastModificationLine {
 				lastModificationLine = relativeLine
-				if bufLine, ok := relativeToBufferLine[relativeLine]; ok {
-					modificationBufferLine = bufLine
+				// For modifications, buffer line = BufferStart + OldLineNum - 1
+				if change.OldLineNum > 0 {
+					modificationBufferLine = bufferStart + change.OldLineNum - 1
 				}
 			}
 		}
@@ -371,19 +461,22 @@ func (b *IncrementalStageBuilder) finalizeCurrentStage() *Stage {
 
 	// Set buffer line for each group
 	for _, g := range groups {
-		if g.Type == "addition" && lastModificationLine > 0 && g.StartLine > lastModificationLine {
+		if g.Type == "modification" {
+			// Modifications overlay in-place starting from BufferStart
+			g.BufferLine = bufferStart + g.StartLine - 1
+		} else if g.Type == "addition" && lastModificationLine > 0 && g.StartLine > lastModificationLine {
+			// Addition after the last modification - render below
 			g.BufferLine = modificationBufferLine + 1
-		} else if bufLine, ok := relativeToBufferLine[g.StartLine]; ok {
-			g.BufferLine = bufLine
 		} else {
-			g.BufferLine = stage.BufferStart + g.StartLine - 1
+			// Default: use BufferStart + relative position
+			g.BufferLine = bufferStart + g.StartLine - 1
 		}
 	}
 
-	cursorLine, cursorCol := CalculateCursorPosition(remappedChanges, stageLines)
+	cursorLine, cursorCol := CalculateCursorPosition(remappedChanges, stageNewLines)
 
 	// Populate stage fields
-	stage.Lines = stageLines
+	stage.Lines = stageNewLines
 	stage.Changes = remappedChanges
 	stage.Groups = groups
 	stage.CursorLine = cursorLine

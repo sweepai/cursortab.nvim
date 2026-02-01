@@ -389,10 +389,14 @@ func finalizeStages(stages []*Stage, newLines []string, filePath string, baseLin
 		}
 
 		// Set buffer line for each group
-		// - Modifications and additions before: use the anchor buffer line
-		// - Additions after all modifications: use anchor + 1 (so virt_lines_above renders below the modification)
+		// - Modifications: use stage.BufferStart + relative position (modifications overlay in-place)
+		// - Additions after modifications: use anchor + 1 (so virt_lines_above renders below)
+		// - Additions before/without modifications: use the computed buffer line from relativeToBufferLine
 		for _, g := range groups {
-			if g.Type == "addition" && lastModificationLine > 0 && g.StartLine > lastModificationLine {
+			if g.Type == "modification" {
+				// Modifications overlay in-place starting from stage.BufferStart
+				g.BufferLine = stage.BufferStart + g.StartLine - 1
+			} else if g.Type == "addition" && lastModificationLine > 0 && g.StartLine > lastModificationLine {
 				// Addition after the last modification - render below
 				g.BufferLine = modificationBufferLine + 1
 			} else if bufLine, ok := relativeToBufferLine[g.StartLine]; ok {
