@@ -70,6 +70,7 @@ local function start_daemon()
 			max_diff_history_tokens = cfg.provider.max_diff_history_tokens,
 			completion_path = cfg.provider.completion_path,
 			fim_tokens = cfg.provider.fim_tokens,
+			privacy_mode = cfg.provider.privacy_mode,
 		},
 		debug = {
 			immediate_shutdown = cfg.debug.immediate_shutdown,

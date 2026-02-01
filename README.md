@@ -23,6 +23,7 @@ Currently supports custom models and models form Zeta (Zed) and SweepAI.
     * [Inline Provider (Default)](#inline-provider-default)
     * [FIM Provider](#fim-provider)
     * [Sweep Provider](#sweep-provider)
+    * [Sweep API Provider](#sweep-api-provider)
     * [Zeta Provider](#zeta-provider)
   * [blink.cmp Integration](#blinkcmp-integration)
 * [Usage](#usage)
@@ -108,7 +109,7 @@ require("cursortab").setup({
   },
 
   provider = {
-    type = "inline",                      -- Provider: "inline", "fim", "sweep", or "zeta"
+    type = "inline",                      -- Provider: "inline", "fim", "sweep", "sweepapi", or "zeta"
     url = "http://localhost:8000",        -- URL of the provider server
     api_key_env = "",                     -- Env var name for API key (e.g., "OPENAI_API_KEY")
     model = "",                           -- Model name
@@ -123,6 +124,7 @@ require("cursortab").setup({
       suffix = "<|fim_suffix|>",
       middle = "<|fim_middle|>",
     },
+    privacy_mode = true,                  -- Don't send telemetry to provider
   },
 
   blink = {
@@ -140,14 +142,16 @@ For detailed configuration documentation, see `:help cursortab-config`.
 
 ### Providers
 
-The plugin supports four AI provider backends: Inline, FIM, Sweep, and Zeta.
+The plugin supports five AI provider backends: Inline, FIM, Sweep, Sweep API,
+and Zeta.
 
-| Provider | Multi-line | Multi-edit | Cursor Prediction | Model             |
-| -------- | :--------: | :--------: | :---------------: | ----------------- |
-| Inline   |            |            |                   | Any base model    |
-| FIM      |     ✓      |            |                   | Any FIM-capable   |
-| Sweep    |     ✓      |     ✓      |         ✓         | `sweep-next-edit` |
-| Zeta     |     ✓      |     ✓      |         ✓         | `zeta`            |
+| Provider  | Multi-line | Multi-edit | Cursor Prediction | Model                         |
+| --------- | :--------: | :--------: | :---------------: | ----------------------------- |
+| Inline    |            |            |                   | Any base model                |
+| FIM       |     ✓      |            |                   | Any FIM-capable               |
+| Sweep     |     ✓      |     ✓      |         ✓         | `sweep-next-edit-1.5b`        |
+| Sweep API |     ✓      |     ✓      |         ✓         | `sweep-next-edit-7b` (hosted) |
+| Zeta      |     ✓      |     ✓      |         ✓         | `zeta`                        |
 
 #### Inline Provider (Default)
 
@@ -246,6 +250,35 @@ llama-server -hf sweepai/sweep-next-edit-1.5b-GGUF --port 8000
 llama-server -m sweep-next-edit-1.5b.q8_0.v2.gguf --port 8000
 ```
 
+#### Sweep API Provider
+
+Sweep's hosted API for Next-Edit predictions. No local model setup required.
+
+> [!NOTE]
+>
+> The hosted API runs `sweep-next-edit-7b` for better quality predictions.
+
+**Requirements:**
+
+- Create an account at [sweep.dev](https://sweep.dev/) and get your API token
+- Set the `SWEEPAPI_TOKEN` environment variable with your token
+
+**Example Configuration:**
+
+```bash
+# In your shell config (.bashrc, .zshrc, etc.)
+export SWEEPAPI_TOKEN="your-api-token-here"
+```
+
+```lua
+require("cursortab").setup({
+  provider = {
+    type = "sweepapi",
+    api_key_env = "SWEEPAPI_TOKEN",
+  },
+})
+```
+
 #### Zeta Provider
 
 Zed's Zeta model - a Qwen2.5-Coder-7B fine-tuned for edit prediction using DPO
@@ -314,7 +347,8 @@ require("blink.cmp").setup({
 ## Usage
 
 - **Tab Key**: Navigate to cursor predictions or accept completions
-- **Shift-Tab Key**: Partially accept completions (word-by-word for inline, line-by-line for multi-line)
+- **Shift-Tab Key**: Partially accept completions (word-by-word for inline,
+  line-by-line for multi-line)
 - **Esc Key**: Reject current completions
 - The plugin automatically shows jump indicators for predicted cursor positions
 - Visual indicators appear for additions, deletions, and completions
