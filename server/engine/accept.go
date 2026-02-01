@@ -29,6 +29,14 @@ func (e *Engine) clearCompletionState() {
 
 // acceptCompletion handles Tab key acceptance of completions.
 func (e *Engine) acceptCompletion() {
+	// Sync buffer first to detect file switches
+	result, _ := e.buffer.Sync(e.WorkspacePath)
+	if result != nil && result.BufferChanged {
+		// File switched - reject stale completion to prevent mixing diff histories from different files
+		e.reject()
+		return
+	}
+
 	if e.applyBatch == nil {
 		return
 	}
@@ -317,6 +325,14 @@ func (e *Engine) partialAcceptNextLine() {
 
 // finalizePartialAccept commits partial accept and handles next stage.
 func (e *Engine) finalizePartialAccept() {
+	// Sync buffer first to detect file switches
+	result, _ := e.buffer.Sync(e.WorkspacePath)
+	if result != nil && result.BufferChanged {
+		// File switched - reject stale completion to prevent mixing diff histories from different files
+		e.reject()
+		return
+	}
+
 	e.buffer.CommitPending()
 	e.saveCurrentFileState()
 	e.clearCompletionState()
