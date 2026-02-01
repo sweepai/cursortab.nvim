@@ -632,7 +632,7 @@ func TestIncrementalDiffBuilder_SearchWindowConstraint(t *testing.T) {
 func TestIncrementalDiffBuilder_SearchWindowRespected(t *testing.T) {
 	// Create old lines where exact match exists ONLY outside the search window
 	oldLines := make([]string, 50)
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		oldLines[i] = "generic line"
 	}
 	// Put a unique line at position 30 (outside initial search window [0, 10))
@@ -769,7 +769,7 @@ func TestIncrementalDiffBuilder_LongFileWithManyExactMatches(t *testing.T) {
 	// Large file (50 lines) where first 40 lines match exactly,
 	// then changes start occurring
 	oldLines := make([]string, 50)
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		oldLines[i] = "func line" + string(rune('A'+i%26)) + "() {}"
 	}
 	oldLines[40] = "// Comment"
@@ -781,7 +781,7 @@ func TestIncrementalDiffBuilder_LongFileWithManyExactMatches(t *testing.T) {
 	builder := NewIncrementalDiffBuilder(oldLines)
 
 	// Model outputs exact same content for first 40 lines
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		change := builder.AddLine(oldLines[i])
 		assert.Nil(t, change, "line should be exact match")
 	}
@@ -929,7 +929,7 @@ func TestLineSimilarity(t *testing.T) {
 func TestIncrementalDiffBuilder_LargeFile(t *testing.T) {
 	// Create a large file with distinct sections
 	oldLines := make([]string, 50)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		oldLines[i] = "func section1_line" + string(rune('A'+i)) + "() {}"
 	}
 	oldLines[20] = ""
@@ -944,7 +944,7 @@ func TestIncrementalDiffBuilder_LargeFile(t *testing.T) {
 	builder := NewIncrementalDiffBuilder(oldLines)
 
 	// Process exact matches for first 20 lines
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		change := builder.AddLine(oldLines[i])
 		assert.Nil(t, change, "line should be exact match")
 	}
@@ -1007,7 +1007,7 @@ func TestIncrementalStageBuilder_DuplicateOutputHandling(t *testing.T) {
 	)
 
 	// Exact matches for first 3 lines
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		builder.AddLine(oldLines[i])
 	}
 
@@ -1156,7 +1156,7 @@ func TestIncrementalStageBuilder_SingleLine(t *testing.T) {
 // TestIncrementalDiffBuilder_VeryLongLines tests handling of very long lines.
 func TestIncrementalDiffBuilder_VeryLongLines(t *testing.T) {
 	longLine := ""
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		longLine += "x"
 	}
 

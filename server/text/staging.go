@@ -288,10 +288,8 @@ func getStageBufferRange(stage *Stage, baseLineOffset int, diff *DiffResult, buf
 		// The bufferLines map was populated with anchor positions during the loop above,
 		// but for pure additions we need all positions to reflect the insertion point
 		// (anchor + 1) to maintain consistency between stage.BufferStart and group.BufferLine.
-		if bufferLines != nil {
-			for lineNum := range bufferLines {
-				bufferLines[lineNum]++
-			}
+		for lineNum := range bufferLines {
+			bufferLines[lineNum]++
 		}
 	}
 
