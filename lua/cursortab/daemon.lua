@@ -20,14 +20,20 @@ end
 
 -- Start the daemon process
 local function start_daemon()
+	local cfg = config.get()
+	local state_dir = cfg.state_dir
+
+	-- Ensure state directory exists
+	vim.fn.mkdir(state_dir, "p")
+
 	local plugin_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")
 	local binary_name = "cursortab"
 	if vim.fn.has("win32") == 1 or vim.fn.has("win64") == 1 then
 		binary_name = binary_name .. ".exe"
 	end
 	local binary_path = plugin_dir .. "/server/" .. binary_name
-	local socket_path = plugin_dir .. "/server/cursortab.sock"
-	local pid_path = plugin_dir .. "/server/cursortab.pid"
+	local socket_path = state_dir .. "/cursortab.sock"
+	local pid_path = state_dir .. "/cursortab.pid"
 
 	-- Check if binary exists
 	if vim.fn.executable(binary_path) == 0 then
@@ -45,10 +51,10 @@ local function start_daemon()
 
 	-- Create JSON configuration (matches Go Config struct)
 	-- Note: UI config is Lua-only (for highlights), not sent to Go daemon
-	local cfg = config.get()
 	local json_config = vim.json.encode({
 		ns_id = ns_id,
 		log_level = cfg.log_level,
+		state_dir = state_dir,
 		behavior = {
 			idle_completion_delay = cfg.behavior.idle_completion_delay,
 			text_change_debounce = cfg.behavior.text_change_debounce,
@@ -208,9 +214,10 @@ end
 
 -- Check daemon process status
 function daemon.check_daemon_status()
-	local plugin_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")
-	local socket_path = plugin_dir .. "/server/cursortab.sock"
-	local pid_path = plugin_dir .. "/server/cursortab.pid"
+	local cfg = config.get()
+	local state_dir = cfg.state_dir
+	local socket_path = state_dir .. "/cursortab.sock"
+	local pid_path = state_dir .. "/cursortab.pid"
 
 	local status = {
 		socket_exists = vim.fn.filereadable(socket_path) == 1,
@@ -246,9 +253,10 @@ end
 
 -- Clean up stale socket and pid files
 local function cleanup_stale_files()
-	local plugin_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")
-	local socket_path = plugin_dir .. "/server/cursortab.sock"
-	local pid_path = plugin_dir .. "/server/cursortab.pid"
+	local cfg = config.get()
+	local state_dir = cfg.state_dir
+	local socket_path = state_dir .. "/cursortab.sock"
+	local pid_path = state_dir .. "/cursortab.pid"
 
 	-- Remove socket file if it exists
 	if vim.fn.filereadable(socket_path) == 1 then
@@ -263,9 +271,10 @@ end
 
 -- Stop daemon process
 function daemon.stop_daemon()
-	local plugin_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")
-	local pid_path = plugin_dir .. "/server/cursortab.pid"
-	local socket_path = plugin_dir .. "/server/cursortab.sock"
+	local cfg = config.get()
+	local state_dir = cfg.state_dir
+	local pid_path = state_dir .. "/cursortab.pid"
+	local socket_path = state_dir .. "/cursortab.sock"
 
 	-- Reset channel regardless of outcome
 	chan = nil

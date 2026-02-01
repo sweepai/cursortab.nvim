@@ -56,8 +56,8 @@ end
 
 ---Show cursortab log file in a floating window
 function M.show_log()
-	local plugin_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")
-	local log_path = plugin_dir .. "/server/cursortab.log"
+	local cfg = config.get()
+	local log_path = cfg.state_dir .. "/cursortab.log"
 
 	-- Check if log file exists
 	if vim.fn.filereadable(log_path) == 0 then
@@ -80,8 +80,8 @@ end
 
 ---Clear cursortab log file
 function M.clear_log()
-	local plugin_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")
-	local log_path = plugin_dir .. "/server/cursortab.log"
+	local cfg = config.get()
+	local log_path = cfg.state_dir .. "/cursortab.log"
 
 	-- Check if log file exists
 	if vim.fn.filereadable(log_path) == 0 then

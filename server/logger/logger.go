@@ -107,20 +107,6 @@ func NewLimitedLogger(file *os.File, level LogLevel) *LimitedLogger {
 	return ll
 }
 
-// SetLevel sets the logging level
-func (ll *LimitedLogger) SetLevel(level LogLevel) {
-	ll.mutex.Lock()
-	defer ll.mutex.Unlock()
-	ll.level = level
-}
-
-// SetGlobalLevel sets the logging level on the global logger
-func SetGlobalLevel(level LogLevel) {
-	if globalLogger != nil {
-		globalLogger.SetLevel(level)
-	}
-}
-
 // shouldLog returns true if the given level should be logged
 func (ll *LimitedLogger) shouldLog(level LogLevel) bool {
 	return level >= ll.level

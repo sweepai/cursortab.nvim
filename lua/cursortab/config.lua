@@ -61,6 +61,7 @@
 ---@class CursortabConfig
 ---@field enabled boolean
 ---@field log_level string
+---@field state_dir string Directory for runtime files (log, socket, pid)
 ---@field keymaps CursortabKeymapsConfig
 ---@field ui CursortabUIConfig
 ---@field behavior CursortabBehaviorConfig
@@ -73,6 +74,7 @@
 local default_config = {
 	enabled = true,
 	log_level = "info",
+	state_dir = vim.fn.stdpath("state") .. "/cursortab",
 
 	keymaps = {
 		accept = "<Tab>", -- Keymap to accept completion, or false to disable

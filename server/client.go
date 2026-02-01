@@ -13,9 +13,9 @@ type Client struct {
 	socketPath string
 }
 
-func NewClient() *Client {
+func NewClient(stateDir string) *Client {
 	return &Client{
-		socketPath: getSocketPath(),
+		socketPath: getSocketPath(stateDir),
 	}
 }
 
@@ -37,17 +37,17 @@ func (c *Client) Connect() error {
 	return nil
 }
 
-func (c *Client) EnsureDaemonRunning() error {
-	running, pid := isDaemonRunning()
+func (c *Client) EnsureDaemonRunning(stateDir string) error {
+	running, pid := isDaemonRunning(stateDir)
 	if running {
 		logger.Debug("daemon already running with PID %d", pid)
 		return nil
 	}
 
-	return c.startDaemon()
+	return c.startDaemon(stateDir)
 }
 
-func (c *Client) startDaemon() error {
+func (c *Client) startDaemon(stateDir string) error {
 	logger.Debug("starting daemon...")
 
 	// Start daemon in background
@@ -68,12 +68,12 @@ func (c *Client) startDaemon() error {
 	}
 
 	// Wait for daemon to start
-	return c.waitForDaemon()
+	return c.waitForDaemon(stateDir)
 }
 
-func (c *Client) waitForDaemon() error {
+func (c *Client) waitForDaemon(stateDir string) error {
 	for range 50 { // Wait up to 5 seconds
-		if running, _ := isDaemonRunning(); running {
+		if running, _ := isDaemonRunning(stateDir); running {
 			logger.Debug("daemon started successfully")
 			return nil
 		}

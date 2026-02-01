@@ -76,6 +76,7 @@ use {
 require("cursortab").setup({
   enabled = true,
   log_level = "info",  -- "trace", "debug", "info", "warn", "error"
+  state_dir = vim.fn.stdpath("state") .. "/cursortab",  -- Directory for runtime files (log, socket, pid)
 
   keymaps = {
     accept = "<Tab>",           -- Keymap to accept completion, or false to disable

@@ -4,6 +4,7 @@ import (
 	"cursortab/logger"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -58,6 +59,7 @@ type DebugConfig struct {
 type Config struct {
 	NsID     int            `json:"ns_id"`
 	LogLevel string         `json:"log_level"`
+	StateDir string         `json:"state_dir"`
 	Behavior BehaviorConfig `json:"behavior"`
 	Provider ProviderConfig `json:"provider"`
 	Debug    DebugConfig    `json:"debug"`
@@ -124,15 +126,19 @@ const (
 	ModeClient ServerMode = "client"
 )
 
-// Setup logger to log to a file in the same directory as the executable
-// Caller must defer logger.Close()
-func setupLogger(logLevel string) *logger.LimitedLogger {
-	execPath, err := os.Executable()
-	if err != nil {
-		logger.Fatal("error getting executable path: %v", err)
+
+// ensureStateDir creates the state directory if it doesn't exist
+func ensureStateDir(stateDir string) {
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		logger.Fatal("error creating state directory: %v", err)
 	}
-	execDir := filepath.Dir(execPath)
-	logPath := filepath.Join(execDir, "cursortab.log")
+}
+
+// Setup logger to log to a file in the state directory
+// Caller must defer logger.Close()
+func setupLogger(stateDir, logLevel string) *logger.LimitedLogger {
+	ensureStateDir(stateDir)
+	logPath := filepath.Join(stateDir, "cursortab.log")
 
 	f, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
@@ -143,26 +149,16 @@ func setupLogger(logLevel string) *logger.LimitedLogger {
 	return logger.NewLimitedLogger(f, level)
 }
 
-func getSocketPath() string {
-	execPath, err := os.Executable()
-	if err != nil {
-		logger.Fatal("error getting executable path: %v", err)
-	}
-	execDir := filepath.Dir(execPath)
-	return filepath.Join(execDir, "cursortab.sock")
+func getSocketPath(stateDir string) string {
+	return filepath.Join(stateDir, "cursortab.sock")
 }
 
-func getPidPath() string {
-	execPath, err := os.Executable()
-	if err != nil {
-		logger.Fatal("error getting executable path: %v", err)
-	}
-	execDir := filepath.Dir(execPath)
-	return filepath.Join(execDir, "cursortab.pid")
+func getPidPath(stateDir string) string {
+	return filepath.Join(stateDir, "cursortab.pid")
 }
 
-func isDaemonRunning() (bool, int) {
-	pidPath := getPidPath()
+func isDaemonRunning(stateDir string) (bool, int) {
+	pidPath := getPidPath(stateDir)
 	data, err := os.ReadFile(pidPath)
 	if err != nil {
 		return false, 0
@@ -184,31 +180,28 @@ func isDaemonRunning() (bool, int) {
 	return err == nil, pid
 }
 
+// loadConfig parses config from CURSORTAB_CONFIG env var.
+// Uses standard log package since this runs before our logger is initialized.
 func loadConfig() Config {
 	var config Config
 	if err := json.Unmarshal([]byte(os.Getenv("CURSORTAB_CONFIG")), &config); err != nil {
-		logger.Fatal("invalid config JSON: %v", err)
+		log.Fatalf("invalid config JSON: %v", err)
 	}
 
 	if err := config.Validate(); err != nil {
-		logger.Fatal("config validation failed: %v", err)
+		log.Fatalf("config validation failed: %v", err)
 	}
 
-	logger.Info("config: %+v", config)
 	return config
 }
 
 func runDaemon() {
-	// Setup logger early with default level
-	ll := setupLogger("info")
-	defer ll.Close()
-
+	// Load config first to get state_dir
 	config := loadConfig()
 
-	// Update log level based on config
-	if config.LogLevel != "" {
-		logger.SetGlobalLevel(logger.ParseLogLevel(config.LogLevel))
-	}
+	// Setup logger with state_dir from config
+	ll := setupLogger(config.StateDir, config.LogLevel)
+	defer ll.Close()
 
 	daemon, err := NewDaemon(config)
 	if err != nil {
@@ -221,9 +214,10 @@ func runDaemon() {
 }
 
 func runClient() {
-	client := NewClient()
+	config := loadConfig()
+	client := NewClient(config.StateDir)
 
-	if err := client.EnsureDaemonRunning(); err != nil {
+	if err := client.EnsureDaemonRunning(config.StateDir); err != nil {
 		logger.Fatal("error ensuring daemon is running: %v", err)
 	}
 
