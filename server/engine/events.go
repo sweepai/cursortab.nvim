@@ -464,6 +464,7 @@ func (e *Engine) doRejectStreamingAndDebounce(event Event) {
 				return
 			}
 			// User typed everything
+			e.trackAccepted()
 			e.clearAll()
 			e.state = stateIdle
 			e.startTextChangeTimer()
@@ -490,6 +491,7 @@ func (e *Engine) doRejectStreamingAndDebounce(event Event) {
 				return
 			}
 			// User typed everything
+			e.trackAccepted()
 			e.clearAll()
 			e.state = stateIdle
 			e.startTextChangeTimer()

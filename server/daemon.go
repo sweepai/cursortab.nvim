@@ -15,6 +15,7 @@ import (
 	"cursortab/buffer"
 	"cursortab/engine"
 	"cursortab/logger"
+	"cursortab/metrics"
 	"cursortab/provider/fim"
 	"cursortab/provider/inline"
 	"cursortab/provider/sweep"
@@ -67,13 +68,17 @@ func NewDaemon(config Config) (*Daemon, error) {
 	}
 
 	var prov engine.Provider
+	var metricsTracker *metrics.MetricsTracker
 	switch types.ProviderType(config.Provider.Type) {
 	case types.ProviderTypeInline:
 		prov = inline.NewProvider(providerConfig)
 	case types.ProviderTypeFIM:
 		prov = fim.NewProvider(providerConfig)
 	case types.ProviderTypeSweep:
-		prov = sweep.NewProvider(providerConfig)
+		prov = sweep.NewProvider(providerConfig, config.EditorInfo)
+		if apiKey != "" {
+			metricsTracker = metrics.NewTracker(apiKey, config.EditorInfo, config.StateDir)
+		}
 	case types.ProviderTypeSweepAPI:
 		prov = sweepapi.NewProvider(providerConfig)
 	case types.ProviderTypeZeta:
@@ -98,6 +103,7 @@ func NewDaemon(config Config) (*Daemon, error) {
 		},
 		MaxDiffTokens:   config.Provider.MaxDiffHistoryTokens,
 		MaxVisibleLines: config.Behavior.MaxVisibleLines,
+		MetricsTracker:  metricsTracker,
 	}, engine.SystemClock)
 	if err != nil {
 		return nil, err

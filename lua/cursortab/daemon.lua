@@ -49,12 +49,19 @@ local function start_daemon()
 		return false
 	end
 
+	-- Build editor info string for metrics/User-Agent (3-part format for amplitude parsing)
+	local v = vim.version()
+	local nvim_version = string.format("%d.%d.%d", v.major, v.minor, v.patch)
+	local os_name = vim.uv.os_uname().sysname
+	local editor_info = string.format("Neovim v%s - OS: %s - cursortab.nvim", nvim_version, os_name)
+
 	-- Create JSON configuration (matches Go Config struct)
 	-- Note: UI config is Lua-only (for highlights), not sent to Go daemon
 	local json_config = vim.json.encode({
 		ns_id = ns_id,
 		log_level = cfg.log_level,
 		state_dir = state_dir,
+		editor_info = editor_info,
 		behavior = {
 			idle_completion_delay = cfg.behavior.idle_completion_delay,
 			text_change_debounce = cfg.behavior.text_change_debounce,

@@ -13,7 +13,7 @@ func TestBuildPrompt_EmptyLines(t *testing.T) {
 	config := &types.ProviderConfig{
 		ProviderModel: "test-model",
 	}
-	p := NewProvider(config)
+	p := NewProvider(config, "")
 
 	ctx := &provider.Context{
 		Request: &types.CompletionRequest{
@@ -34,7 +34,7 @@ func TestBuildPrompt_WithContent(t *testing.T) {
 	config := &types.ProviderConfig{
 		ProviderModel: "test-model",
 	}
-	p := NewProvider(config)
+	p := NewProvider(config, "")
 
 	ctx := &provider.Context{
 		Request: &types.CompletionRequest{
@@ -55,7 +55,7 @@ func TestBuildPrompt_WithDiffHistory(t *testing.T) {
 	config := &types.ProviderConfig{
 		ProviderModel: "test-model",
 	}
-	p := NewProvider(config)
+	p := NewProvider(config, "")
 
 	ctx := &provider.Context{
 		Request: &types.CompletionRequest{
@@ -150,7 +150,7 @@ func TestParseCompletion_NoChange(t *testing.T) {
 	config := &types.ProviderConfig{
 		ProviderModel: "test-model",
 	}
-	p := NewProvider(config)
+	p := NewProvider(config, "")
 
 	ctx := &provider.Context{
 		Request: &types.CompletionRequest{
@@ -173,7 +173,7 @@ func TestParseCompletion_WithChange(t *testing.T) {
 	config := &types.ProviderConfig{
 		ProviderModel: "test-model",
 	}
-	p := NewProvider(config)
+	p := NewProvider(config, "")
 
 	ctx := &provider.Context{
 		Request: &types.CompletionRequest{
@@ -197,7 +197,7 @@ func TestParseCompletion_StripsStopTokens(t *testing.T) {
 	config := &types.ProviderConfig{
 		ProviderModel: "test-model",
 	}
-	p := NewProvider(config)
+	p := NewProvider(config, "")
 
 	ctx := &provider.Context{
 		Request: &types.CompletionRequest{
@@ -220,7 +220,7 @@ func TestParseCompletion_InvalidWindow(t *testing.T) {
 	config := &types.ProviderConfig{
 		ProviderModel: "test-model",
 	}
-	p := NewProvider(config)
+	p := NewProvider(config, "")
 
 	ctx := &provider.Context{
 		Request: &types.CompletionRequest{

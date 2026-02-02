@@ -9,6 +9,7 @@ import (
 
 	"cursortab/buffer"
 	"cursortab/logger"
+	"cursortab/metrics"
 	"cursortab/text"
 	"cursortab/types"
 )
@@ -105,6 +106,8 @@ type Engine struct {
 	userActions      []*types.UserAction // Ring buffer of last MaxUserActions actions
 	lastBufferLines  []string            // For detecting text changes
 	lastCursorOffset int                 // For cursor movement detection
+
+	activeMetrics *metrics.CompletionMetrics
 }
 
 // NewEngine creates a new Engine instance.
@@ -435,5 +438,37 @@ func totalChars(lines []string) int {
 		total += len(line) + 1
 	}
 	return total
+}
+
+func (e *Engine) trackShown(additions, deletions int) {
+	tracker := e.config.MetricsTracker
+	if tracker == nil {
+		return
+	}
+	e.activeMetrics = &metrics.CompletionMetrics{
+		ID:        metrics.GenerateUUID(),
+		Additions: max(additions, 1),
+		Deletions: max(deletions, 1),
+		ShownAt:   e.clock.Now(),
+	}
+	tracker.TrackShown(e.activeMetrics)
+}
+
+func (e *Engine) trackAccepted() {
+	tracker := e.config.MetricsTracker
+	if tracker == nil || e.activeMetrics == nil {
+		return
+	}
+	tracker.TrackAccepted(e.activeMetrics)
+	e.activeMetrics = nil
+}
+
+func (e *Engine) trackDisposed() {
+	tracker := e.config.MetricsTracker
+	if tracker == nil || e.activeMetrics == nil {
+		return
+	}
+	tracker.TrackDisposed(e.activeMetrics)
+	e.activeMetrics = nil
 }
 

@@ -8,6 +8,7 @@ import (
 
 // reject clears all state and returns to idle.
 func (e *Engine) reject() {
+	e.trackDisposed()
 	e.clearState(ClearOptions{
 		CancelCurrent:     true,
 		CancelPrefetch:    true,
@@ -54,6 +55,8 @@ func (e *Engine) acceptCompletion() {
 	if accepter, ok := e.provider.(CompletionAccepter); ok {
 		go accepter.AcceptCompletion(e.mainCtx)
 	}
+
+	e.trackAccepted()
 
 	// 2. Clear completion state (keep prefetch)
 	e.clearCompletionState()
@@ -411,6 +414,7 @@ func (e *Engine) finalizePartialAccept() {
 		return
 	}
 
+	e.trackAccepted()
 	e.buffer.CommitPending()
 	e.saveCurrentFileState()
 	e.clearCompletionState()

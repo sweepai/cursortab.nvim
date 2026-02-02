@@ -52,6 +52,7 @@ func (e *Engine) handleTextChangeImpl() {
 			return
 		}
 		// User typed everything - completion fully typed
+		e.trackAccepted()
 		e.clearAll()
 		e.state = stateIdle
 		e.startTextChangeTimer()
@@ -312,6 +313,8 @@ func (e *Engine) processCompletion(completion *types.Completion) bool {
 			CurrentIdx: 0,
 			SourcePath: e.buffer.Path(),
 		}
+
+		e.trackShown(len(completion.Lines), len(originalLines))
 
 		if stagingResult.FirstNeedsNavigation {
 			firstStage := stagingResult.Stages[0]

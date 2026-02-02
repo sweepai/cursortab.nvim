@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"cursortab/buffer"
+	"cursortab/metrics"
 	"cursortab/text"
 	"cursortab/types"
 )
@@ -206,4 +207,5 @@ type EngineConfig struct {
 	CursorPrediction    CursorPredictionConfig
 	MaxDiffTokens       int // Maximum tokens for diff history per file (0 = no limit)
 	MaxVisibleLines     int // Maximum lines per stage (0 = no limit)
+	MetricsTracker      *metrics.MetricsTracker
 }

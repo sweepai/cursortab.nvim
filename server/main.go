@@ -57,12 +57,13 @@ type DebugConfig struct {
 
 // Config is the main configuration structure
 type Config struct {
-	NsID     int            `json:"ns_id"`
-	LogLevel string         `json:"log_level"`
-	StateDir string         `json:"state_dir"`
-	Behavior BehaviorConfig `json:"behavior"`
-	Provider ProviderConfig `json:"provider"`
-	Debug    DebugConfig    `json:"debug"`
+	NsID       int            `json:"ns_id"`
+	LogLevel   string         `json:"log_level"`
+	StateDir   string         `json:"state_dir"`
+	EditorInfo string         `json:"editor_info"`
+	Behavior   BehaviorConfig `json:"behavior"`
+	Provider   ProviderConfig `json:"provider"`
+	Debug      DebugConfig    `json:"debug"`
 }
 
 // Validate checks that the config has valid values.

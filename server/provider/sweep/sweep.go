@@ -1,6 +1,7 @@
 package sweep
 
 import (
+	"net/http"
 	"strings"
 
 	"cursortab/client/openai"
@@ -8,12 +9,30 @@ import (
 	"cursortab/types"
 )
 
+// userAgentTransport wraps an http.RoundTripper to inject a User-Agent header.
+type userAgentTransport struct {
+	base      http.RoundTripper
+	userAgent string
+}
+
+func (t *userAgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("User-Agent", t.userAgent)
+	return t.base.RoundTrip(req)
+}
+
 // NewProvider creates a new Sweep Next-Edit model provider
-func NewProvider(config *types.ProviderConfig) *provider.Provider {
+func NewProvider(config *types.ProviderConfig, editorInfo string) *provider.Provider {
+	client := openai.NewClient(config.ProviderURL, config.CompletionPath, config.APIKey)
+	if editorInfo != "" {
+		client.HTTPClient.Transport = &userAgentTransport{
+			base:      http.DefaultTransport,
+			userAgent: editorInfo,
+		}
+	}
 	return &provider.Provider{
 		Name:          "sweep",
 		Config:        config,
-		Client:        openai.NewClient(config.ProviderURL, config.CompletionPath, config.APIKey),
+		Client:        client,
 		StreamingType: provider.StreamingLines,
 		Preprocessors: []provider.Preprocessor{
 			provider.TrimContent(),

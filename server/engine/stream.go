@@ -380,6 +380,8 @@ func (e *Engine) renderStreamedStage(stage *text.Stage) {
 
 	// Store groups for partial accept
 	e.currentGroups = stage.Groups
+
+	e.trackShown(len(stage.Lines), stage.BufferEnd-stage.BufferStart+1)
 }
 
 // handleTokenChunk processes a cumulative text chunk from token streaming.
@@ -431,6 +433,10 @@ func (e *Engine) handleTokenChunk(accumulatedText string) {
 
 	// Store groups for partial accept
 	e.currentGroups = []*text.Group{group}
+
+	if e.activeMetrics == nil {
+		e.trackShown(1, 1)
+	}
 }
 
 // handleTokenStreamComplete processes token stream completion when channel closes.
