@@ -8,8 +8,12 @@ local ui = require("cursortab.ui")
 ---@class EventsModule
 local events = {}
 
--- Track if events have been set up to prevent duplicate registrations
-local events_setup_done = false
+-- Track if autocommands have been set up to prevent duplicate registrations
+local autocommands_setup_done = false
+
+-- Track currently bound keys so we can clean them up on re-setup
+---@type {accept: string|nil, partial_accept: string|nil}
+local current_keymaps = { accept = nil, partial_accept = nil }
 
 -- Skip exactly one TextChanged after accepting a completion
 ---@type boolean
@@ -74,13 +78,42 @@ local function on_partial_accept()
 	end
 end
 
--- Set up all autocommands and keymaps
-function events.setup()
-	-- Prevent duplicate setup
-	if events_setup_done then
+-- Set up keymaps (can be called multiple times when config changes)
+local function setup_keymaps()
+	local cfg = config.get()
+
+	-- Clear old keymaps if they were set with different keys
+	if current_keymaps.accept and current_keymaps.accept ~= cfg.keymaps.accept then
+		pcall(vim.keymap.del, "i", current_keymaps.accept)
+		pcall(vim.keymap.del, "n", current_keymaps.accept)
+	end
+	if current_keymaps.partial_accept and current_keymaps.partial_accept ~= cfg.keymaps.partial_accept then
+		pcall(vim.keymap.del, "i", current_keymaps.partial_accept)
+		pcall(vim.keymap.del, "n", current_keymaps.partial_accept)
+	end
+
+	-- Set up new keymaps
+	if cfg.keymaps.accept then
+		local accept_key = cfg.keymaps.accept --[[@as string]]
+		vim.keymap.set("i", accept_key, on_accept, { noremap = true, silent = true, expr = true })
+		vim.keymap.set("n", accept_key, on_accept, { noremap = true, silent = true, expr = true })
+		current_keymaps.accept = accept_key
+	end
+	if cfg.keymaps.partial_accept then
+		local partial_key = cfg.keymaps.partial_accept --[[@as string]]
+		vim.keymap.set("i", partial_key, on_partial_accept, { noremap = true, silent = true, expr = true })
+		vim.keymap.set("n", partial_key, on_partial_accept, { noremap = true, silent = true, expr = true })
+		current_keymaps.partial_accept = partial_key
+	end
+	vim.keymap.set("n", "<Esc>", on_escape, { noremap = true, silent = true, expr = true })
+end
+
+-- Set up autocommands (only once)
+local function setup_autocommands()
+	if autocommands_setup_done then
 		return
 	end
-	events_setup_done = true
+	autocommands_setup_done = true
 
 	-- Track buffer/window focus changes to update cached state
 	vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
@@ -167,20 +200,6 @@ function events.setup()
 		end,
 	})
 
-	-- Set up keymaps
-	local cfg = config.get()
-	if cfg.keymaps.accept then
-		local accept_key = cfg.keymaps.accept --[[@as string]]
-		vim.keymap.set("i", accept_key, on_accept, { noremap = true, silent = true, expr = true })
-		vim.keymap.set("n", accept_key, on_accept, { noremap = true, silent = true, expr = true })
-	end
-	if cfg.keymaps.partial_accept then
-		local partial_key = cfg.keymaps.partial_accept --[[@as string]]
-		vim.keymap.set("i", partial_key, on_partial_accept, { noremap = true, silent = true, expr = true })
-		vim.keymap.set("n", partial_key, on_partial_accept, { noremap = true, silent = true, expr = true })
-	end
-	vim.keymap.set("n", "<Esc>", on_escape, { noremap = true, silent = true, expr = true })
-
 	-- Set up autocommand to close completions/predictions on certain events
 	vim.api.nvim_create_autocmd({ "ModeChanged", "CmdlineEnter", "CmdwinEnter", "BufEnter" }, {
 		callback = function(args)
@@ -201,6 +220,12 @@ function events.setup()
 			daemon.send_reject()
 		end,
 	})
+end
+
+-- Set up all autocommands and keymaps
+function events.setup()
+	setup_autocommands()
+	setup_keymaps()
 end
 
 -- Clear all completions (exposed for manual use)
