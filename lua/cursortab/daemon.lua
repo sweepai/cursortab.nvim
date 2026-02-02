@@ -122,8 +122,8 @@ local function start_daemon()
 			detach = true,
 		})
 
-		-- Wait for socket
-		for _ = 1, 50 do
+		-- Wait for socket (max 1 second)
+		for _ = 1, 10 do
 			vim.wait(100)
 			if vim.fn.filereadable(socket_path) == 1 then
 				break
@@ -147,20 +147,13 @@ local function send_rpc_event(event_name)
 		return
 	end
 
-	-- Ensure we have a valid channel
+	-- Drop event if no valid channel (daemon starts on setup/restart, not here)
 	if not chan or chan <= 0 then
-		if not start_daemon() then
-			return
-		end
+		return
 	end
 
-	-- Use pcall with timeout for better error handling
 	local success = pcall(function()
-		-- Ensure chan is valid before sending
-		if chan and chan > 0 then
-			-- Send the event with minimal overhead
-			vim.fn.rpcnotify(chan, "cursortab_event", event_name)
-		end
+		vim.fn.rpcnotify(chan, "cursortab_event", event_name)
 	end)
 
 	if not success then
