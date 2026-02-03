@@ -73,7 +73,7 @@ Full configuration with defaults: >lua
     behavior = {
       idle_completion_delay = 50,   -- ms, -1 to disable
       text_change_debounce = 50,    -- ms, -1 to disable
-      max_visible_lines = 0,        -- max visible lines per completion, 0 to disable
+      max_visible_lines = 12,       -- max visible lines per completion, 0 to disable
       cursor_prediction = {
         enabled = true,
         auto_advance = true,
