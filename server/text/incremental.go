@@ -111,6 +111,13 @@ func (b *IncrementalDiffBuilder) findMatchingOldLine(newLine string, _ int) int 
 		if b.OldLines[expectedPos] == newLine {
 			return expectedPos + 1 // 1-indexed
 		}
+		// Check if old line at expected position is empty and new line has content.
+		// Empty lines should match non-empty content because filling an empty line
+		// is a modification (append_chars), not an addition. This is critical for
+		// cursor-on-empty-line scenarios where ghost text should appear inline.
+		if b.OldLines[expectedPos] == "" && newLine != "" {
+			return expectedPos + 1 // 1-indexed
+		}
 	}
 
 	// Search in a window around expected position

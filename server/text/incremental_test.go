@@ -967,12 +967,16 @@ func TestIncrementalDiffBuilder_LargeFile(t *testing.T) {
 	// oldLineIdx should have advanced
 	assert.Equal(t, 20, builder.oldLineIdx, "oldLineIdx")
 
-	// Add a new line that doesn't exist
+	// Add a new line that doesn't exist in the original
+	// Since oldLines[20] is "", and we're adding non-empty content at the expected position,
+	// the empty line will be matched and filled (append_chars)
 	change := builder.AddLine("func new_function() {}")
 	assert.NotNil(t, change, "expected change for new line")
 
-	// Should be recorded as either addition or modification (depending on similarity)
-	assert.True(t, change.Type == ChangeAddition || change.Type == ChangeModification || change.Type == ChangeReplaceChars, "expected addition or modification type")
+	// Should be recorded as append_chars (filling empty line), addition, or modification
+	assert.True(t, change.Type == ChangeAddition || change.Type == ChangeModification ||
+		change.Type == ChangeReplaceChars || change.Type == ChangeAppendChars,
+		"expected valid change type")
 }
 
 // TestIncrementalDiffBuilder_DuplicateLinesPrevented verifies that the same old line
@@ -1712,6 +1716,75 @@ func TestIncrementalStageBuilder_BlankLineAdditions(t *testing.T) {
 		totalLinesInGroups += len(g.Lines)
 	}
 	assert.Equal(t, 7, totalLinesInGroups, "groups should cover all 7 lines including blank lines")
+}
+
+// TestIncrementalDiffBuilder_EmptyLineFilledWithContent verifies that when
+// an empty line at the expected position is filled with content, it's detected
+// as a modification (append_chars), not an addition.
+func TestIncrementalDiffBuilder_EmptyLineFilledWithContent(t *testing.T) {
+	oldLines := []string{"header", "", ""}
+	builder := NewIncrementalDiffBuilder(oldLines)
+
+	// Line 1: exact match
+	change1 := builder.AddLine("header")
+	assert.Nil(t, change1, "expected no change for exact match")
+
+	// Line 2: exact match (empty)
+	change2 := builder.AddLine("")
+	assert.Nil(t, change2, "expected no change for empty line match")
+
+	// Line 3: filling empty line with content should be append_chars
+	change3 := builder.AddLine("new content here")
+	assert.NotNil(t, change3, "expected change for filling empty line")
+	assert.Equal(t, ChangeAppendChars, change3.Type, "change type")
+	assert.Equal(t, 3, change3.OldLineNum, "old line num")
+	assert.Equal(t, 3, change3.NewLineNum, "new line num")
+	assert.Equal(t, "", change3.OldContent, "old content")
+	assert.Equal(t, "new content here", change3.Content, "new content")
+
+	// Line 4: addition beyond original file
+	change4 := builder.AddLine("another line")
+	assert.NotNil(t, change4, "expected change for addition")
+	assert.Equal(t, ChangeAddition, change4.Type, "addition type")
+}
+
+// TestIncrementalStageBuilder_EmptyLineFilledWithContent verifies that when
+// an empty line is filled with content, the stage builder correctly produces
+// append_chars groups.
+func TestIncrementalStageBuilder_EmptyLineFilledWithContent(t *testing.T) {
+	oldLines := []string{"header", "", ""}
+	builder := NewIncrementalStageBuilder(
+		oldLines,
+		1,    // baseLineOffset
+		10,   // proximityThreshold
+		0,    // maxVisibleLines (disabled)
+		0, 0, // viewport disabled
+		3,    // cursorRow
+		"test.txt",
+	)
+
+	builder.AddLine("header")
+	builder.AddLine("")
+	builder.AddLine("new content here")
+	builder.AddLine("another line")
+
+	result := builder.Finalize()
+	assert.NotNil(t, result, "expected staging result")
+	assert.Equal(t, 1, len(result.Stages), "stage count")
+
+	stage := result.Stages[0]
+
+	// First change should be append_chars (filling empty line)
+	change1, ok := stage.Changes[1]
+	assert.True(t, ok, "should have change at relative line 1")
+	assert.Equal(t, ChangeAppendChars, change1.Type, "change type")
+
+	// First group should be modification with append_chars hint
+	assert.True(t, len(stage.Groups) >= 1, "should have at least 1 group")
+	firstGroup := stage.Groups[0]
+	assert.Equal(t, "modification", firstGroup.Type, "group type")
+	assert.Equal(t, "append_chars", firstGroup.RenderHint, "render hint")
+	assert.Equal(t, 3, firstGroup.BufferLine, "buffer line")
 }
 
 // TestLineSimilarity_EdgeCases tests similarity calculation edge cases.
