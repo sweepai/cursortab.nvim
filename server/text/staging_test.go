@@ -1193,6 +1193,31 @@ func TestStageNeedsNavigation_PartiallyVisible(t *testing.T) {
 	assert.True(t, needsNav, "should need navigation when far from cursor")
 }
 
+func TestStageNeedsNavigation_AdditionsAtEndOfFile(t *testing.T) {
+	// When additions are at the end of a file, BufferStart may be beyond the
+	// viewport (e.g., file has 2 lines, viewport is [1,2], BufferStart is 3).
+	// These should NOT need navigation if cursor is at the last line.
+
+	// Stage represents pure additions at end of file
+	// BufferStart = 3 (insertion point after line 2)
+	stage := &Stage{
+		BufferStart: 3,
+		BufferEnd:   3,
+	}
+
+	// Viewport is [1, 2] (2-line file), cursor on line 2
+	// Distance from cursor (2) to BufferStart (3) is 1
+	// With threshold 2, should NOT need navigation
+	needsNav := StageNeedsNavigation(stage, 2, 1, 2, 2)
+	assert.False(t, needsNav, "additions at end of file should not need navigation when cursor is at last line")
+
+	// Same scenario with cursor on line 1
+	// Distance from cursor (1) to BufferStart (3) is 2
+	// With threshold 2, should NOT need navigation
+	needsNav = StageNeedsNavigation(stage, 1, 1, 2, 2)
+	assert.False(t, needsNav, "additions at end of file should not need navigation when cursor is within threshold")
+}
+
 func TestCreateStages_NoViewportInfo(t *testing.T) {
 	// Edge case: viewportTop=0 and viewportBottom=0 (no viewport info)
 
