@@ -15,21 +15,19 @@ type IncrementalDiffBuilder struct {
 	LineMapping *LineMapping       // Coordinate mapping between old and new
 
 	// Tracking state
-	oldLineIdx          int          // Current position in old lines (0-indexed)
-	usedOldLines        map[int]bool // Old line indices that have been matched
-	similarityThreshold float64      // Threshold for considering lines as matches
+	oldLineIdx   int          // Current position in old lines (0-indexed)
+	usedOldLines map[int]bool // Old line indices that have been matched
 }
 
 // NewIncrementalDiffBuilder creates a new incremental diff builder
 func NewIncrementalDiffBuilder(oldLines []string) *IncrementalDiffBuilder {
 	return &IncrementalDiffBuilder{
-		OldLines:            oldLines,
-		NewLines:            []string{},
-		Changes:             make(map[int]LineChange),
-		LineMapping:         &LineMapping{NewToOld: []int{}, OldToNew: make([]int, len(oldLines))},
-		oldLineIdx:          0,
-		usedOldLines:        make(map[int]bool),
-		similarityThreshold: 0.3, // Lower threshold to catch modifications like "1" -> "1 mod"
+		OldLines:     oldLines,
+		NewLines:     []string{},
+		Changes:      make(map[int]LineChange),
+		LineMapping:  &LineMapping{NewToOld: []int{}, OldToNew: make([]int, len(oldLines))},
+		oldLineIdx:   0,
+		usedOldLines: make(map[int]bool),
 	}
 }
 
@@ -154,12 +152,11 @@ func (b *IncrementalDiffBuilder) findMatchingOldLine(newLine string, _ int) int 
 	// Priority 5: Similarity match at expected position with priority.
 	// This gives priority to the expected position when similarity is REASONABLY HIGH,
 	// even if a line further away might have slightly higher similarity.
-	// Use a higher threshold (0.35) to avoid false matches on barely-similar lines.
+	// Uses ExpectedPositionSimilarityThreshold to avoid false matches on barely-similar lines.
 	// This fixes the bug where extended if conditions were matched to template strings.
-	const expectedPositionSimilarityThreshold = 0.35
 	if expectedPos < len(b.OldLines) && !b.usedOldLines[expectedPos+1] {
 		expectedSimilarity := LineSimilarity(newLine, b.OldLines[expectedPos])
-		if expectedSimilarity > expectedPositionSimilarityThreshold {
+		if expectedSimilarity > ExpectedPositionSimilarityThreshold {
 			return expectedPos + 1 // 1-indexed
 		}
 	}
@@ -177,7 +174,7 @@ func (b *IncrementalDiffBuilder) findMatchingOldLine(newLine string, _ int) int 
 
 	// Priority 7: Best similarity match in window (excluding expected position)
 	bestIdx := -1
-	bestSimilarity := b.similarityThreshold
+	bestSimilarity := SimilarityThreshold
 
 	for i := searchStart; i < searchEnd; i++ {
 		if b.usedOldLines[i+1] || i == expectedPos {

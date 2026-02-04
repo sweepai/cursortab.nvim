@@ -433,48 +433,54 @@ local function render_single_modification(group, nvim_line, virt_line_offset, cu
 	end
 end
 
--- Render multi-line modification group: overlay each line
+-- Render multi-line modification group: side-by-side (old lines highlighted, new content to the right)
 ---@param group Group
 ---@param virt_line_offset integer Number of virtual lines added above this point
 ---@param current_win integer
 ---@param current_buf integer
 local function render_modification_group(group, virt_line_offset, current_win, current_buf)
 	local syntax_ft = vim.api.nvim_get_option_value("filetype", { buf = current_buf })
+	local line_count = group.end_line - group.start_line + 1
 
-	for i, new_line_content in ipairs(group.lines) do
-		-- buffer_line is the first line; add offset for subsequent lines
+	-- Compute max width of old lines for positioning the overlay
+	local max_old_width = 0
+	for i = 1, line_count do
 		local line_nvim = group.buffer_line + i - 2 -- 0-indexed
-
-		local original_content = vim.api.nvim_buf_get_lines(current_buf, line_nvim, line_nvim + 1, false)[1] or ""
-		local original_width = vim.fn.strdisplaywidth(original_content)
-
-		-- Add virt_line_offset for overlay positioning
-		local overlay_nvim_line = line_nvim + virt_line_offset
-
-		if new_line_content and new_line_content ~= "" then
-			local overlay_win, overlay_buf, _ = create_overlay_window(
-				current_win,
-				overlay_nvim_line,
-				0,
-				new_line_content,
-				syntax_ft,
-				"cursortabhl_modification",
-				original_width
-			)
-			table.insert(completion_windows, { win_id = overlay_win, buf_id = overlay_buf })
-		elseif original_content ~= "" then
-			-- Show deletion indicator for empty replacement
-			local overlay_win, overlay_buf, _ = create_overlay_window(
-				current_win,
-				overlay_nvim_line,
-				0,
-				string.rep(" ", original_width),
-				nil,
-				"cursortabhl_deletion",
-				original_width
-			)
-			table.insert(completion_windows, { win_id = overlay_win, buf_id = overlay_buf })
+		local line_content = vim.api.nvim_buf_get_lines(current_buf, line_nvim, line_nvim + 1, false)[1] or ""
+		local width = vim.fn.strdisplaywidth(line_content)
+		if width > max_old_width then
+			max_old_width = width
 		end
+	end
+
+	-- Highlight each old line with deletion background
+	for i = 1, line_count do
+		local line_nvim = group.buffer_line + i - 2 -- 0-indexed
+		local line_content = vim.api.nvim_buf_get_lines(current_buf, line_nvim, line_nvim + 1, false)[1] or ""
+
+		if line_content ~= "" then
+			local extmark_id = vim.api.nvim_buf_set_extmark(current_buf, daemon.get_namespace_id(), line_nvim, 0, {
+				end_col = #line_content,
+				hl_group = "cursortabhl_deletion",
+				hl_mode = "combine",
+			})
+			table.insert(completion_extmarks, { buf = current_buf, extmark_id = extmark_id })
+		end
+	end
+
+	-- Create single overlay window to the right with all new lines
+	if #group.lines > 0 then
+		local first_line_nvim = group.buffer_line - 1 -- 0-indexed
+		local overlay_win, overlay_buf, _ = create_overlay_window(
+			current_win,
+			first_line_nvim + virt_line_offset,
+			max_old_width + 2,
+			group.lines,
+			syntax_ft,
+			"cursortabhl_modification",
+			nil
+		)
+		table.insert(completion_windows, { win_id = overlay_win, buf_id = overlay_buf })
 	end
 end
 

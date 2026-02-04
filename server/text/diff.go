@@ -449,7 +449,6 @@ func handleModificationsWithMapping(deletedLines, insertedLines []string,
 	usedDeletes := make(map[int]bool)
 
 	// First pass: Match similar non-empty lines with similarity threshold
-	const similarityThreshold = 0.3
 	matches := make(map[int]int) // maps deleted index to inserted index
 
 	for i, deletedLine := range deletedLines {
@@ -457,7 +456,7 @@ func handleModificationsWithMapping(deletedLines, insertedLines []string,
 			continue
 		}
 		bestIdx, bestSimilarity := findBestMatch(deletedLine, insertedLines, usedInserts)
-		if bestIdx != -1 && bestSimilarity >= similarityThreshold {
+		if bestIdx != -1 && bestSimilarity >= SimilarityThreshold {
 			matches[i] = bestIdx
 			usedInserts[bestIdx] = true
 			usedDeletes[i] = true
