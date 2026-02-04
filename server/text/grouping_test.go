@@ -522,3 +522,83 @@ func TestValidateRenderHintsForCursor_IgnoresDifferentLine(t *testing.T) {
 
 	assert.Equal(t, "append_chars", groups[0].RenderHint, "should not affect groups on different lines")
 }
+
+func TestValidateRenderHintsForCursor_DowngradesReplaceCharsAtOrAfterCursor(t *testing.T) {
+	// Scenario: cursor is at column 5, replace_chars starts at column 5
+	// This should be downgraded because the overlay would hide the cursor
+	groups := []*Group{
+		{
+			Type:       "modification",
+			RenderHint: "replace_chars",
+			BufferLine: 10,
+			ColStart:   5,
+			ColEnd:     10,
+		},
+	}
+
+	ValidateRenderHintsForCursor(groups, 10, 5) // cursor at row 10, col 5
+
+	assert.Equal(t, "", groups[0].RenderHint, "should downgrade replace_chars when ColStart <= cursorCol")
+}
+
+func TestValidateRenderHintsForCursor_DowngradesReplaceCharsBeforeCursor(t *testing.T) {
+	// Scenario: cursor is at column 8, replace_chars starts at column 3
+	// This should be downgraded because cursor is past the change start
+	groups := []*Group{
+		{
+			Type:       "modification",
+			RenderHint: "replace_chars",
+			BufferLine: 10,
+			ColStart:   3,
+			ColEnd:     10,
+		},
+	}
+
+	ValidateRenderHintsForCursor(groups, 10, 8) // cursor at row 10, col 8
+
+	assert.Equal(t, "", groups[0].RenderHint, "should downgrade replace_chars when ColStart < cursorCol")
+}
+
+func TestValidateRenderHintsForCursor_KeepsReplaceCharsBeforeCursor(t *testing.T) {
+	// Scenario: cursor is at column 2, replace_chars starts at column 5
+	// This should NOT be downgraded because cursor is before the change
+	groups := []*Group{
+		{
+			Type:       "modification",
+			RenderHint: "replace_chars",
+			BufferLine: 10,
+			ColStart:   5,
+			ColEnd:     10,
+		},
+	}
+
+	ValidateRenderHintsForCursor(groups, 10, 2) // cursor at row 10, col 2
+
+	assert.Equal(t, "replace_chars", groups[0].RenderHint, "should keep replace_chars when ColStart > cursorCol")
+}
+
+func TestValidateRenderHintsForCursor_AppendVsReplaceAtExactPosition(t *testing.T) {
+	// Key difference: at exact cursor position (col 5):
+	// - append_chars: keeps hint (text appends AFTER cursor)
+	// - replace_chars: downgrades (text replaces AT cursor, hiding it)
+	appendGroup := &Group{
+		Type:       "modification",
+		RenderHint: "append_chars",
+		BufferLine: 10,
+		ColStart:   5,
+		ColEnd:     10,
+	}
+	replaceGroup := &Group{
+		Type:       "modification",
+		RenderHint: "replace_chars",
+		BufferLine: 10,
+		ColStart:   5,
+		ColEnd:     10,
+	}
+
+	ValidateRenderHintsForCursor([]*Group{appendGroup}, 10, 5)
+	ValidateRenderHintsForCursor([]*Group{replaceGroup}, 10, 5)
+
+	assert.Equal(t, "append_chars", appendGroup.RenderHint, "append_chars at exact cursor position should keep hint")
+	assert.Equal(t, "", replaceGroup.RenderHint, "replace_chars at exact cursor position should downgrade")
+}

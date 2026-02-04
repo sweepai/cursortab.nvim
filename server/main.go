@@ -126,7 +126,6 @@ const (
 	ModeClient ServerMode = "client"
 )
 
-
 // ensureStateDir creates the state directory if it doesn't exist
 func ensureStateDir(stateDir string) {
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
