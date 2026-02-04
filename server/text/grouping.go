@@ -250,7 +250,18 @@ func CalculateCursorPosition(changes map[int]LineChange, newLines []string) (int
 		return -1, -1
 	}
 
-	// Position at end of target line
+	// For character-level changes, position at end of the actual change
+	// For DeleteChars, use ColStart (deletion point) since ColEnd is in old coordinates
+	// For AppendChars/ReplaceChars, use ColEnd (end of inserted text)
+	// For full-line changes, position at end of line
+	change, exists := changes[targetLine]
+	if exists && change.Type.IsCharacterLevel() {
+		if change.Type == ChangeDeleteChars {
+			return targetLine, change.ColStart
+		}
+		return targetLine, change.ColEnd
+	}
+
 	col := len(newLines[targetLine-1])
 	return targetLine, col
 }

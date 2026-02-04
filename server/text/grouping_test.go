@@ -276,6 +276,158 @@ func TestCalculateCursorPosition_ClampToBuffer(t *testing.T) {
 	assert.True(t, line <= len(newLines), "cursor clamped to buffer size")
 }
 
+// Cursor should be placed at end of change, not end of line
+func TestCalculateCursorPosition_AppendChars(t *testing.T) {
+	// console.log(|); -> console.log("hello"|);
+	// ColEnd marks where the appended text ends
+	changes := map[int]LineChange{
+		1: {
+			Type:       ChangeAppendChars,
+			Content:    `console.log("hello");`,
+			OldContent: "console.log();",
+			ColStart:   12, // after (
+			ColEnd:     19, // after "hello"
+		},
+	}
+	newLines := []string{`console.log("hello");`}
+
+	line, col := CalculateCursorPosition(changes, newLines)
+
+	assert.Equal(t, 1, line, "cursor line")
+	assert.Equal(t, 19, col, "cursor at end of change, not end of line (21)")
+}
+
+func TestCalculateCursorPosition_ReplaceChars(t *testing.T) {
+	// app.route() -> application.route()
+	// Cursor should be after "application", not at end of line
+	changes := map[int]LineChange{
+		1: {
+			Type:       ChangeReplaceChars,
+			Content:    "application.route()",
+			OldContent: "app.route()",
+			ColStart:   0,
+			ColEnd:     11, // end of "application"
+		},
+	}
+	newLines := []string{"application.route()"}
+
+	line, col := CalculateCursorPosition(changes, newLines)
+
+	assert.Equal(t, 1, line, "cursor line")
+	assert.Equal(t, 11, col, "cursor at end of replacement, not end of line (19)")
+}
+
+func TestCalculateCursorPosition_DeleteChars(t *testing.T) {
+	// "Hello world John" -> "Hello John"
+	// Deleted "world " at position 6
+	// ColEnd=12 is in OLD coordinates (6 + len("world "))
+	// Cursor should be at ColStart (deletion point), not ColEnd
+	changes := map[int]LineChange{
+		1: {
+			Type:       ChangeDeleteChars,
+			Content:    "Hello John",
+			OldContent: "Hello world John",
+			ColStart:   6,  // position where deletion occurred
+			ColEnd:     12, // end of deleted text in OLD coordinates
+		},
+	}
+	newLines := []string{"Hello John"} // len=10, less than ColEnd=12
+
+	line, col := CalculateCursorPosition(changes, newLines)
+
+	assert.Equal(t, 1, line, "cursor line")
+	assert.Equal(t, 6, col, "cursor at deletion point (ColStart), not ColEnd")
+}
+
+func TestCalculateCursorPosition_AppendCharsAtLineEnd(t *testing.T) {
+	// When ColEnd equals line length, behavior is same as before
+	changes := map[int]LineChange{
+		1: {
+			Type:       ChangeAppendChars,
+			Content:    "hello world",
+			OldContent: "hello",
+			ColStart:   5,
+			ColEnd:     11, // equals len("hello world")
+		},
+	}
+	newLines := []string{"hello world"}
+
+	line, col := CalculateCursorPosition(changes, newLines)
+
+	assert.Equal(t, 1, line, "cursor line")
+	assert.Equal(t, 11, col, "cursor at end of line (which is also end of change)")
+}
+
+func TestCalculateCursorPosition_CharLevelPriorityOverAddition(t *testing.T) {
+	// AppendChars has lower priority than Modification, but higher than nothing
+	// When we have AppendChars and Addition, AppendChars wins in priority order
+	changes := map[int]LineChange{
+		1: {
+			Type:       ChangeAppendChars,
+			Content:    `log("hi");`,
+			OldContent: "log();",
+			ColStart:   4,
+			ColEnd:     8, // after "hi"
+		},
+		2: {Type: ChangeAddition, Content: "new line"},
+	}
+	newLines := []string{`log("hi");`, "new line"}
+
+	line, col := CalculateCursorPosition(changes, newLines)
+
+	// Addition has higher priority than AppendChars in current logic
+	// But cursor col should still be at end of the selected line
+	assert.Equal(t, 2, line, "cursor at addition line (higher priority)")
+	assert.Equal(t, 8, col, "cursor at end of addition line")
+}
+
+func TestCalculateCursorPosition_MultipleAppendChars(t *testing.T) {
+	// Multiple AppendChars changes: cursor at the last line's ColEnd
+	changes := map[int]LineChange{
+		1: {
+			Type:       ChangeAppendChars,
+			Content:    "first change",
+			OldContent: "first",
+			ColStart:   5,
+			ColEnd:     12,
+		},
+		3: {
+			Type:       ChangeAppendChars,
+			Content:    "third change",
+			OldContent: "third",
+			ColStart:   5,
+			ColEnd:     12,
+		},
+	}
+	newLines := []string{"first change", "second", "third change"}
+
+	line, col := CalculateCursorPosition(changes, newLines)
+
+	assert.Equal(t, 3, line, "cursor at last append chars line")
+	assert.Equal(t, 12, col, "cursor at ColEnd of last append chars")
+}
+
+func TestCalculateCursorPosition_ModificationOverridesCharLevel(t *testing.T) {
+	// Full-line Modification has higher priority than char-level changes
+	// For Modification, cursor should be at end of line (no ColEnd)
+	changes := map[int]LineChange{
+		1: {Type: ChangeModification, Content: "modified line", OldContent: "old"},
+		2: {
+			Type:       ChangeAppendChars,
+			Content:    "append here",
+			OldContent: "append",
+			ColStart:   6,
+			ColEnd:     11,
+		},
+	}
+	newLines := []string{"modified line", "append here"}
+
+	line, col := CalculateCursorPosition(changes, newLines)
+
+	assert.Equal(t, 1, line, "cursor at modification (higher priority)")
+	assert.Equal(t, 13, col, "cursor at end of modification line")
+}
+
 // TestGroupsMustReflectActualBufferState verifies that groups computed from the
 // actual buffer diff can differ from pre-computed groups when buffer state changes.
 func TestGroupsMustReflectActualBufferState(t *testing.T) {
