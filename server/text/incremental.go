@@ -502,30 +502,64 @@ func (b *IncrementalStageBuilder) finalizeCurrentStage() *Stage {
 	// Compute groups from the batch diff changes
 	groups := GroupChanges(remappedChanges)
 
-	// Find the last modification's relative line for addition positioning
-	lastModificationLine := 0
-	modificationBufferLine := stage.BufferStart
+	// Build mapping from relative line to buffer line for modifications.
+	// Modifications map to their old line position in the buffer.
+	relativeToBufferLine := make(map[int]int)
 	for relativeLine, change := range remappedChanges {
 		if change.Type == ChangeModification || change.Type == ChangeAppendChars ||
 			change.Type == ChangeDeleteChars || change.Type == ChangeReplaceChars {
+			if change.OldLineNum > 0 {
+				relativeToBufferLine[relativeLine] = bufferStart + change.OldLineNum - 1
+			}
+		}
+	}
+
+	// Find modification positions for anchoring additions:
+	// - lastModificationLine: for anchoring additions that come after
+	// - cursorLineModification: for anchoring additions that precede the cursor
+	lastModificationLine := 0
+	lastModificationBufferLine := bufferStart
+	cursorLineModificationRelative := 0
+	cursorLineModificationBufferLine := 0
+
+	for relativeLine, change := range remappedChanges {
+		if change.Type == ChangeModification || change.Type == ChangeAppendChars ||
+			change.Type == ChangeDeleteChars || change.Type == ChangeReplaceChars {
+			modBufLine := relativeToBufferLine[relativeLine]
+			if modBufLine == 0 {
+				modBufLine = bufferStart + relativeLine - 1
+			}
+
 			if relativeLine > lastModificationLine {
 				lastModificationLine = relativeLine
-				// For modifications, buffer line = BufferStart + OldLineNum - 1
-				if change.OldLineNum > 0 {
-					modificationBufferLine = bufferStart + change.OldLineNum - 1
-				}
+				lastModificationBufferLine = modBufLine
+			}
+			// Check if this modification is on the cursor line
+			if modBufLine == b.CursorRow {
+				cursorLineModificationRelative = relativeLine
+				cursorLineModificationBufferLine = modBufLine
 			}
 		}
 	}
 
 	// Set buffer line for each group
+	// - Modifications: use mapped buffer line from old line position
+	// - Additions before cursor line modification: anchor at cursor line
+	// - Additions after last modification: anchor below it
+	// - All other cases: use BufferStart + relative position
 	for _, g := range groups {
 		if g.Type == "modification" {
-			// Modifications overlay in-place starting from BufferStart
-			g.BufferLine = bufferStart + g.StartLine - 1
+			if bufLine, ok := relativeToBufferLine[g.StartLine]; ok {
+				g.BufferLine = bufLine
+			} else {
+				g.BufferLine = bufferStart + g.StartLine - 1
+			}
 		} else if g.Type == "addition" && lastModificationLine > 0 && g.StartLine > lastModificationLine {
 			// Addition after the last modification - render below
-			g.BufferLine = modificationBufferLine + 1
+			g.BufferLine = lastModificationBufferLine + 1
+		} else if g.Type == "addition" && cursorLineModificationRelative > 0 && g.StartLine < cursorLineModificationRelative {
+			// Addition before cursor line's modification - anchor at cursor line
+			g.BufferLine = cursorLineModificationBufferLine
 		} else {
 			// Default: use BufferStart + relative position
 			g.BufferLine = bufferStart + g.StartLine - 1

@@ -146,6 +146,17 @@ func setRenderHint(group *Group, change LineChange) {
 	}
 }
 
+// ValidateRenderHintsForCursor downgrades append_chars to regular modification
+// when the change starts before the cursor position on the cursor line.
+// This prevents ghost text from appearing before the cursor.
+func ValidateRenderHintsForCursor(groups []*Group, cursorRow, cursorCol int) {
+	for _, g := range groups {
+		if g.RenderHint == "append_chars" && g.BufferLine == cursorRow && g.ColStart < cursorCol {
+			g.RenderHint = ""
+		}
+	}
+}
+
 // CalculateCursorPosition computes optimal cursor position from changes
 // Priority: modifications > additions > char-level > deletions
 // Returns (line, col) where line is 1-indexed and col is 0-indexed

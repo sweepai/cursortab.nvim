@@ -1811,3 +1811,175 @@ func TestLineSimilarity_EdgeCases(t *testing.T) {
 		})
 	}
 }
+
+// TestIncrementalStageBuilder_ModificationBufferLineUsesOldPosition verifies that
+// modification groups have BufferLine computed from their old line position,
+// not their relative position in the new content.
+func TestIncrementalStageBuilder_ModificationBufferLineUsesOldPosition(t *testing.T) {
+	// Old content: 2 lines at buffer positions 5-6
+	// New content: 4 lines where:
+	// - Lines 1-2 are additions
+	// - Line 3 modifies old line 2 (buffer line 6)
+	// - Line 4 is an addition
+	oldLines := []string{
+		"first line",
+		"second line",
+	}
+	builder := NewIncrementalStageBuilder(
+		oldLines,
+		5,    // baseLineOffset - old lines are at buffer 5-6
+		10,   // proximityThreshold
+		0,    // maxVisibleLines (disabled)
+		0, 0, // viewport disabled
+		6, // cursorRow - cursor on "second line" (buffer line 6)
+		"test.go",
+	)
+
+	// Stream the new content
+	builder.AddLine("new addition 1")
+	builder.AddLine("new addition 2")
+	builder.AddLine("second line modified") // modifies old line 2
+	builder.AddLine("new addition 3")
+
+	result := builder.Finalize()
+	assert.NotNil(t, result, "result should not be nil")
+	assert.Equal(t, 1, len(result.Stages), "should have 1 stage")
+
+	stage := result.Stages[0]
+
+	// Find the modification group
+	var modGroup *Group
+	for _, g := range stage.Groups {
+		if g.Type == "modification" {
+			modGroup = g
+			break
+		}
+	}
+
+	assert.NotNil(t, modGroup, "should have a modification group")
+	// Modification of old line 2 (buffer line 6) should have BufferLine=6
+	// Even though it's at relative position 3 in the new content
+	assert.Equal(t, 6, modGroup.BufferLine,
+		"modification BufferLine should match old line position (6), not relative position")
+}
+
+// TestIncrementalStageBuilder_AdditionsBeforeCursorModificationAnchoredAtCursor
+// verifies that additions preceding the cursor line's modification are anchored
+// at the cursor line, so they render directly above the cursor.
+func TestIncrementalStageBuilder_AdditionsBeforeCursorModificationAnchoredAtCursor(t *testing.T) {
+	// Old content: 2 lines at buffer positions 5-6
+	// Cursor is on buffer line 6
+	// New content has additions before the cursor line modification
+	oldLines := []string{
+		"first line",
+		"cursor line content",
+	}
+	builder := NewIncrementalStageBuilder(
+		oldLines,
+		5,    // baseLineOffset
+		10,   // proximityThreshold
+		0,    // maxVisibleLines (disabled)
+		0, 0, // viewport disabled
+		6, // cursorRow - cursor on "cursor line content" (buffer line 6)
+		"test.go",
+	)
+
+	// Stream: first line modified, additions inserted, cursor line modified
+	builder.AddLine("first line modified")
+	builder.AddLine("added line 1")
+	builder.AddLine("added line 2")
+	builder.AddLine("cursor line replaced")
+
+	result := builder.Finalize()
+	assert.NotNil(t, result, "result should not be nil")
+	assert.Equal(t, 1, len(result.Stages), "should have 1 stage")
+
+	stage := result.Stages[0]
+
+	// Find the cursor line modification
+	var cursorMod *Group
+	for _, g := range stage.Groups {
+		if g.Type == "modification" && len(g.OldLines) > 0 && g.OldLines[0] == "cursor line content" {
+			cursorMod = g
+			break
+		}
+	}
+
+	assert.NotNil(t, cursorMod, "should have modification for cursor line")
+	assert.Equal(t, 6, cursorMod.BufferLine, "cursor line modification should have BufferLine=6")
+
+	// Find addition groups that precede the cursor line modification
+	for _, g := range stage.Groups {
+		if g.Type == "addition" && g.StartLine < cursorMod.StartLine {
+			// Additions before cursor modification should be anchored at cursor line
+			assert.Equal(t, 6, g.BufferLine,
+				"additions before cursor line should be anchored at cursor line (6)")
+		}
+	}
+}
+
+// TestIncrementalStageBuilder_WhitespaceLineExpansion tests the scenario where
+// a whitespace-only line on the cursor row is expanded with additions before it.
+// This closely matches the log scenario where:
+// - Buffer line 5: "" (empty line)
+// - Buffer line 6: "        " (8 spaces, cursor line)
+// - Completion expands to 4 lines with additions before the modification
+func TestIncrementalStageBuilder_WhitespaceLineExpansion(t *testing.T) {
+	oldLines := []string{
+		"",        // buffer line 5
+		"        ", // buffer line 6 (cursor line)
+	}
+	builder := NewIncrementalStageBuilder(
+		oldLines,
+		5,    // baseLineOffset
+		10,   // proximityThreshold
+		0,    // maxVisibleLines (disabled)
+		0, 0, // viewport disabled
+		6, // cursorRow - cursor on whitespace line (buffer line 6)
+		"test.py",
+	)
+
+	// Stream the completion: adds content before cursor line, then modifies cursor line
+	builder.AddLine("    Parameters")                    // modifies empty line or addition
+	builder.AddLine("    ----------")                    // addition
+	builder.AddLine("    rA : numpy array")              // modifies whitespace line
+	builder.AddLine("        The coordinates of point A.") // addition
+
+	result := builder.Finalize()
+	assert.NotNil(t, result, "result should not be nil")
+	assert.Equal(t, 1, len(result.Stages), "should have 1 stage")
+
+	stage := result.Stages[0]
+
+	// Find the modification of the whitespace line (cursor line)
+	var cursorMod *Group
+	for _, g := range stage.Groups {
+		if g.Type == "modification" && len(g.OldLines) > 0 && g.OldLines[0] == "        " {
+			cursorMod = g
+			break
+		}
+	}
+
+	assert.NotNil(t, cursorMod, "should have modification for whitespace line")
+	// The modification should have BufferLine=6 (where the whitespace was)
+	assert.Equal(t, 6, cursorMod.BufferLine,
+		"modification of cursor line should have BufferLine=6")
+
+	// Find additions that come before the cursor line modification
+	for _, g := range stage.Groups {
+		if g.Type == "addition" && g.StartLine < cursorMod.StartLine {
+			// Additions before cursor modification should be anchored at cursor line (6)
+			assert.Equal(t, 6, g.BufferLine,
+				"additions before cursor line should be anchored at cursor line (6)")
+		}
+	}
+
+	// Find additions that come after the cursor line modification
+	for _, g := range stage.Groups {
+		if g.Type == "addition" && g.StartLine > cursorMod.StartLine {
+			// Additions after modification should be below it (BufferLine = cursorMod.BufferLine + 1)
+			assert.Equal(t, 7, g.BufferLine,
+				"additions after cursor line modification should have BufferLine=7")
+		}
+	}
+}

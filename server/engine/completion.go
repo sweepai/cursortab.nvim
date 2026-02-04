@@ -293,6 +293,7 @@ func (e *Engine) processCompletion(completion *types.Completion) bool {
 	stagingResult := text.CreateStages(
 		diffResult,
 		e.buffer.Row(),
+		e.buffer.Col(),
 		viewportTop, viewportBottom,
 		completion.StartLine,
 		e.config.CursorPrediction.ProximityThreshold,

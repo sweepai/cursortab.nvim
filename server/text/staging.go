@@ -36,7 +36,8 @@ type StagingResult struct {
 //
 // Parameters:
 //   - diff: The diff result from ComputeDiff
-//   - cursorRow: Current cursor position (1-indexed buffer coordinate)
+//   - cursorRow: Current cursor row (1-indexed buffer coordinate)
+//   - cursorCol: Current cursor column (0-indexed)
 //   - viewportTop, viewportBottom: Visible viewport (1-indexed buffer coordinates)
 //   - baseLineOffset: Where the diff range starts in the buffer (1-indexed)
 //   - proximityThreshold: Max gap between changes to be in same stage
@@ -47,6 +48,7 @@ type StagingResult struct {
 func CreateStages(
 	diff *DiffResult,
 	cursorRow int,
+	cursorCol int,
 	viewportTop, viewportBottom int,
 	baseLineOffset int,
 	proximityThreshold int,
@@ -97,7 +99,7 @@ func CreateStages(
 	})
 
 	// Step 4: Finalize stages (content, cursor targets)
-	finalizeStages(allStages, newLines, filePath, baseLineOffset, diff)
+	finalizeStages(allStages, newLines, filePath, baseLineOffset, diff, cursorRow, cursorCol)
 
 	// Step 5: Check if first stage needs navigation UI
 	firstNeedsNav := StageNeedsNavigation(
@@ -338,7 +340,7 @@ func getStageNewLineRange(stage *Stage) (int, int) {
 // finalizeStages populates the remaining fields of partial stages.
 // It extracts content, remaps changes to relative line numbers, computes groups,
 // and sets cursor targets based on sort order.
-func finalizeStages(stages []*Stage, newLines []string, filePath string, baseLineOffset int, diff *DiffResult) {
+func finalizeStages(stages []*Stage, newLines []string, filePath string, baseLineOffset int, diff *DiffResult, cursorRow, cursorCol int) {
 	for i, stage := range stages {
 		isLastStage := i == len(stages)-1
 
@@ -386,32 +388,42 @@ func finalizeStages(stages []*Stage, newLines []string, filePath string, baseLin
 		// Compute groups and cursor position using the grouping module
 		groups := GroupChanges(remappedChanges)
 
-		// Find the last modification's relative line number to determine which additions are "after"
+		// Find modification positions for anchoring additions:
+		// - lastModificationLine: for anchoring additions that come after
+		// - cursorLineModification: for anchoring additions that precede the cursor
 		lastModificationLine := 0
-		modificationBufferLine := stage.BufferStart
+		lastModificationBufferLine := stage.BufferStart
+		cursorLineModificationRelative := 0
+		cursorLineModificationBufferLine := 0
+
 		for relativeLine, change := range remappedChanges {
 			if change.Type == ChangeModification || change.Type == ChangeAppendChars ||
 				change.Type == ChangeDeleteChars || change.Type == ChangeReplaceChars {
 				if relativeLine > lastModificationLine {
 					lastModificationLine = relativeLine
 					if bufLine, ok := relativeToBufferLine[relativeLine]; ok {
-						modificationBufferLine = bufLine
+						lastModificationBufferLine = bufLine
 					}
+				}
+				// Check if this modification is on the cursor line
+				if bufLine, ok := relativeToBufferLine[relativeLine]; ok && bufLine == cursorRow {
+					cursorLineModificationRelative = relativeLine
+					cursorLineModificationBufferLine = bufLine
 				}
 			}
 		}
 
 		// Set buffer line for each group
-		// - Modifications: use stage.BufferStart + relative position (modifications overlay in-place)
-		// - Additions after modifications: use anchor + 1 (so virt_lines_above renders below)
-		// - Additions before/without modifications: use the computed buffer line from relativeToBufferLine
+		// - Additions before cursor line modification: anchor at cursor line
+		// - Additions after last modification: anchor below it
+		// - All other cases: use relativeToBufferLine
 		for _, g := range groups {
-			if g.Type == "modification" {
-				// Modifications overlay in-place starting from stage.BufferStart
-				g.BufferLine = stage.BufferStart + g.StartLine - 1
-			} else if g.Type == "addition" && lastModificationLine > 0 && g.StartLine > lastModificationLine {
+			if g.Type == "addition" && lastModificationLine > 0 && g.StartLine > lastModificationLine {
 				// Addition after the last modification - render below
-				g.BufferLine = modificationBufferLine + 1
+				g.BufferLine = lastModificationBufferLine + 1
+			} else if g.Type == "addition" && cursorLineModificationRelative > 0 && g.StartLine < cursorLineModificationRelative {
+				// Addition before cursor line's modification - anchor at cursor line
+				g.BufferLine = cursorLineModificationBufferLine
 			} else if bufLine, ok := relativeToBufferLine[g.StartLine]; ok {
 				g.BufferLine = bufLine
 			} else {
@@ -419,7 +431,10 @@ func finalizeStages(stages []*Stage, newLines []string, filePath string, baseLin
 			}
 		}
 
-		cursorLine, cursorCol := CalculateCursorPosition(remappedChanges, stageLines)
+		// Validate render hints against current cursor position
+		ValidateRenderHintsForCursor(groups, cursorRow, cursorCol)
+
+		targetCursorLine, targetCursorCol := CalculateCursorPosition(remappedChanges, stageLines)
 
 		// Create cursor target
 		var cursorTarget *types.CursorPredictionTarget
@@ -446,8 +461,8 @@ func finalizeStages(stages []*Stage, newLines []string, filePath string, baseLin
 		stage.Lines = stageLines
 		stage.Changes = remappedChanges
 		stage.Groups = groups
-		stage.CursorLine = cursorLine
-		stage.CursorCol = cursorCol
+		stage.CursorLine = targetCursorLine
+		stage.CursorCol = targetCursorCol
 		stage.CursorTarget = cursorTarget
 		stage.IsLastStage = isLastStage
 

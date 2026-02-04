@@ -316,3 +316,57 @@ func TestGroupsMustReflectActualBufferState(t *testing.T) {
 	assert.True(t, firstGroups[0].Type != secondGroups[0].Type,
 		"groups from different buffer states should differ")
 }
+
+func TestValidateRenderHintsForCursor_DowngradesAppendCharsBeforeCursor(t *testing.T) {
+	// Scenario: cursor is at column 5, but append_chars starts at column 2
+	// This should be downgraded because the ghost text would appear before cursor
+	groups := []*Group{
+		{
+			Type:       "modification",
+			RenderHint: "append_chars",
+			BufferLine: 10,
+			ColStart:   2,
+			ColEnd:     8,
+		},
+	}
+
+	ValidateRenderHintsForCursor(groups, 10, 5) // cursor at row 10, col 5
+
+	assert.Equal(t, "", groups[0].RenderHint, "should downgrade append_chars when ColStart < cursorCol")
+}
+
+func TestValidateRenderHintsForCursor_KeepsAppendCharsAtOrAfterCursor(t *testing.T) {
+	// Scenario: cursor is at column 2, append_chars starts at column 4
+	// This should NOT be downgraded because ghost text appears after cursor
+	groups := []*Group{
+		{
+			Type:       "modification",
+			RenderHint: "append_chars",
+			BufferLine: 10,
+			ColStart:   4,
+			ColEnd:     8,
+		},
+	}
+
+	ValidateRenderHintsForCursor(groups, 10, 2) // cursor at row 10, col 2
+
+	assert.Equal(t, "append_chars", groups[0].RenderHint, "should keep append_chars when ColStart >= cursorCol")
+}
+
+func TestValidateRenderHintsForCursor_IgnoresDifferentLine(t *testing.T) {
+	// Scenario: append_chars on a different line than cursor
+	// Should NOT be affected even if ColStart < cursorCol
+	groups := []*Group{
+		{
+			Type:       "modification",
+			RenderHint: "append_chars",
+			BufferLine: 15, // different line
+			ColStart:   2,
+			ColEnd:     8,
+		},
+	}
+
+	ValidateRenderHintsForCursor(groups, 10, 5) // cursor at row 10, col 5
+
+	assert.Equal(t, "append_chars", groups[0].RenderHint, "should not affect groups on different lines")
+}
