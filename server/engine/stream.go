@@ -47,6 +47,7 @@ func (e *Engine) requestStreamingCompletion(provider LineStreamProvider, req *ty
 			viewportTop,
 			viewportBottom,
 			e.buffer.Row(),
+			e.buffer.Col(),
 			req.FilePath,
 		),
 		ProviderContext: providerCtx,

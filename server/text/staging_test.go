@@ -507,7 +507,7 @@ func TestCreateStages_MixedInsertionDeletion(t *testing.T) {
 	assert.Len(t, 2, result.Stages, "stages")
 }
 
-func TestGetBufferLineForChange_Insertion(t *testing.T) {
+func TestGetBufferLine_Insertion(t *testing.T) {
 	// Test that insertions correctly calculate buffer position
 	mapping := &LineMapping{
 		NewToOld: []int{1, -1, -1, 2}, // lines 2,3 are insertions after line 1
@@ -521,13 +521,13 @@ func TestGetBufferLineForChange_Insertion(t *testing.T) {
 		OldLineNum: -1, // pure insertion
 	}
 
-	bufferLine := GetBufferLineForChange(change, 2, 1, mapping)
+	bufferLine := mapping.GetBufferLine(change, 2, 1)
 
 	// Should find old line 1 as anchor (the mapped line before insertion)
 	assert.Equal(t, 1, bufferLine, "buffer line for insertion (anchor)")
 }
 
-func TestGetBufferLineForChange_Modification(t *testing.T) {
+func TestGetBufferLine_Modification(t *testing.T) {
 	// Test that modifications use OldLineNum directly
 	mapping := &LineMapping{
 		NewToOld: []int{1, 2, 3},
@@ -540,7 +540,7 @@ func TestGetBufferLineForChange_Modification(t *testing.T) {
 		OldLineNum: 2,
 	}
 
-	bufferLine := GetBufferLineForChange(change, 2, 10, mapping)
+	bufferLine := mapping.GetBufferLine(change, 2, 10)
 
 	// baseLineOffset=10, oldLineNum=2: 2 + 10 - 1 = 11
 	assert.Equal(t, 11, bufferLine, "buffer line for modification")
@@ -571,7 +571,7 @@ func TestGetStageBufferRange_WithInsertions(t *testing.T) {
 	assert.True(t, start <= end, fmt.Sprintf("invalid range: start=%d > end=%d", start, end))
 }
 
-func TestGetBufferLineForChange_DeletionAtLine1(t *testing.T) {
+func TestGetBufferLine_DeletionAtLine1(t *testing.T) {
 	// Edge case: deletion at line 1 with no preceding anchor
 	mapping := &LineMapping{
 		NewToOld: []int{2, 3}, // old line 1 deleted
@@ -584,13 +584,13 @@ func TestGetBufferLineForChange_DeletionAtLine1(t *testing.T) {
 		NewLineNum: -1, // no new line for deletions
 	}
 
-	bufferLine := GetBufferLineForChange(change, 1, 1, mapping)
+	bufferLine := mapping.GetBufferLine(change, 1, 1)
 
 	// Should use OldLineNum directly: 1 + 1 - 1 = 1
 	assert.Equal(t, 1, bufferLine, "buffer line for deletion at line 1")
 }
 
-func TestGetBufferLineForChange_InsertionWithNoAnchor(t *testing.T) {
+func TestGetBufferLine_InsertionWithNoAnchor(t *testing.T) {
 	// Edge case: insertion at line 1 with no preceding mapped line
 	mapping := &LineMapping{
 		NewToOld: []int{-1, 1}, // new line 1 is insertion, new line 2 maps to old line 1
@@ -603,7 +603,7 @@ func TestGetBufferLineForChange_InsertionWithNoAnchor(t *testing.T) {
 		OldLineNum: -1, // pure insertion
 	}
 
-	bufferLine := GetBufferLineForChange(change, 1, 1, mapping)
+	bufferLine := mapping.GetBufferLine(change, 1, 1)
 
 	// No anchor found, should fallback to mapKey: 1 + 1 - 1 = 1
 	assert.Equal(t, 1, bufferLine, "buffer line for insertion at line 1 with no anchor")

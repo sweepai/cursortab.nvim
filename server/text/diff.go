@@ -65,6 +65,38 @@ func (ct ChangeType) String() string {
 	}
 }
 
+// RenderHint returns the render hint string for character-level change types.
+// Returns empty string for non-character-level changes.
+func (ct ChangeType) RenderHint() string {
+	switch ct {
+	case ChangeAppendChars:
+		return "append_chars"
+	case ChangeDeleteChars:
+		return "delete_chars"
+	case ChangeReplaceChars:
+		return "replace_chars"
+	default:
+		return ""
+	}
+}
+
+// GroupType returns the group type string for rendering.
+func (ct ChangeType) GroupType() string {
+	switch ct {
+	case ChangeAddition:
+		return "addition"
+	case ChangeDeletion:
+		return "deletion"
+	default:
+		return "modification"
+	}
+}
+
+// IsCharacterLevel returns true if this is a character-level change type.
+func (ct ChangeType) IsCharacterLevel() bool {
+	return ct == ChangeAppendChars || ct == ChangeDeleteChars || ct == ChangeReplaceChars
+}
+
 // LineChange represents a line-level change operation
 type LineChange struct {
 	Type       ChangeType
@@ -81,6 +113,29 @@ type LineChange struct {
 type LineMapping struct {
 	NewToOld []int // NewToOld[i] = old line num for new line i+1, or -1 if pure insertion
 	OldToNew []int // OldToNew[i] = new line num for old line i+1, or -1 if deleted
+}
+
+// GetBufferLine calculates the buffer line for a change using coordinate mapping.
+// mapKey is the change's key in the changes map (typically newLineNum).
+// baseLineOffset is where the diff range starts in the buffer (1-indexed).
+func (m *LineMapping) GetBufferLine(change LineChange, mapKey, baseLineOffset int) int {
+	if change.OldLineNum > 0 {
+		return change.OldLineNum + baseLineOffset - 1
+	}
+
+	if m != nil && change.NewLineNum > 0 && change.NewLineNum <= len(m.NewToOld) {
+		oldLine := m.NewToOld[change.NewLineNum-1]
+		if oldLine > 0 {
+			return oldLine + baseLineOffset - 1
+		}
+		for i := change.NewLineNum - 2; i >= 0; i-- {
+			if m.NewToOld[i] > 0 {
+				return m.NewToOld[i] + baseLineOffset - 1
+			}
+		}
+	}
+
+	return mapKey + baseLineOffset - 1
 }
 
 // DiffResult contains all categorized change operations mapped by line number

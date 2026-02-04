@@ -72,6 +72,7 @@ func TestIncrementalStageBuilder_SingleStage(t *testing.T) {
 		0, // viewportTop (disabled)
 		0, // viewportBottom (disabled)
 		1, // cursorRow
+		0, // cursorCol
 		"test.go",
 	)
 
@@ -110,6 +111,7 @@ func TestIncrementalStageBuilder_MultipleStages(t *testing.T) {
 		0, // viewportTop
 		0, // viewportBottom
 		1, // cursorRow
+		0, // cursorCol
 		"test.go",
 	)
 
@@ -139,7 +141,7 @@ func TestIncrementalStageBuilder_StageFinalizationOnGap(t *testing.T) {
 		2,    // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		1, // cursorRow
+		1, 0, // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -206,6 +208,7 @@ func TestIncrementalStageBuilder_ViewportBoundary(t *testing.T) {
 		1,  // viewportTop
 		5,  // viewportBottom (first 5 lines visible)
 		3,  // cursorRow
+		0,  // cursorCol
 		"test.go",
 	)
 
@@ -267,7 +270,7 @@ func TestIncrementalStageBuilder_BaseLineOffset(t *testing.T) {
 		3,      // proximityThreshold
 		0,      // maxVisibleLines (disabled)
 		15, 30, // viewport (lines 15-30 visible)
-		22, // cursorRow (in middle of window)
+		22, 0,  // cursorRow, cursorCol
 		"test.ts",
 	)
 
@@ -327,7 +330,7 @@ func TestIncrementalStageBuilder_BaseLineOffsetWithGap(t *testing.T) {
 		2,      // proximityThreshold
 		0,      // maxVisibleLines (disabled)
 		40, 60, // viewport
-		52, // cursorRow
+		52, 0,  // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -379,7 +382,7 @@ func TestIncrementalStageBuilder_GapDetectionWithSimilarityMatching(t *testing.T
 		3,      // proximityThreshold - gaps > 3 should split stages
 		0,      // maxVisibleLines (disabled)
 		40, 80, // viewport
-		58, // cursorRow (in middle)
+		58, 0,  // cursorRow, cursorCol
 		"test.ts",
 	)
 
@@ -448,7 +451,7 @@ func TestIncrementalStageBuilder_SimilarityMatchingToSimilarLines(t *testing.T) 
 		3,      // proximityThreshold
 		0,      // maxVisibleLines (disabled)
 		15, 35, // viewport
-		23, // cursorRow
+		23, 0,  // cursorRow, cursorCol
 		"test.ts",
 	)
 
@@ -496,7 +499,7 @@ func TestIncrementalStageBuilder_GapDetectionBehavior(t *testing.T) {
 		2,     // proximityThreshold = 2 (gap > 2 should split)
 		0,     // maxVisibleLines (disabled)
 		5, 20, // viewport
-		12, // cursorRow
+		12, 0, // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -545,7 +548,7 @@ func TestIncrementalStageBuilder_ConsecutiveOutputMapsToScatteredLines(t *testin
 		1,      // proximityThreshold = 1 (very strict - gap > 1 should split)
 		0,      // maxVisibleLines (disabled)
 		45, 60, // viewport
-		52, // cursorRow
+		52, 0,  // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -857,7 +860,7 @@ func TestIncrementalStageBuilder_WhenModelOutputStartsMidFile(t *testing.T) {
 		3,    // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		5, // cursorRow
+		5, 0, // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -1022,7 +1025,7 @@ func TestIncrementalStageBuilder_DuplicateOutputHandling(t *testing.T) {
 		3,    // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		1, // cursorRow
+		1, 0, // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -1136,7 +1139,7 @@ func TestIncrementalStageBuilder_EmptyInput(t *testing.T) {
 		3,          // proximityThreshold
 		0,          // maxVisibleLines (disabled)
 		0, 0,       // viewport disabled
-		1, // cursorRow
+		1, 0,       // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -1162,7 +1165,7 @@ func TestIncrementalStageBuilder_SingleLine(t *testing.T) {
 		3,    // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		1, // cursorRow
+		1, 0, // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -1209,7 +1212,7 @@ func TestIncrementalStageBuilder_LargeGap(t *testing.T) {
 		3,    // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		1, // cursorRow
+		1, 0, // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -1242,7 +1245,7 @@ func TestIncrementalStageBuilder_ConsecutiveModifications(t *testing.T) {
 		3,    // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		1, // cursorRow
+		1, 0, // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -1350,7 +1353,7 @@ func TestIncrementalStageBuilder_LowSimilarityReplacement(t *testing.T) {
 		10,   // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		1, // cursorRow
+		1, 0, // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -1393,7 +1396,7 @@ func TestIncrementalStageBuilder_AppendCharsWithAdditionsBelow(t *testing.T) {
 		10,   // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		1, // cursorRow
+		1, 0, // cursorRow, cursorCol
 		"test.txt",
 	)
 
@@ -1434,7 +1437,7 @@ func TestIncrementalStageBuilder_AdditionsAboveWithAppendChars(t *testing.T) {
 		10,   // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		1, // cursorRow
+		1, 0, // cursorRow, cursorCol
 		"test.txt",
 	)
 
@@ -1475,7 +1478,7 @@ func TestIncrementalStageBuilder_AdditionsAboveAndBelowWithAppendChars(t *testin
 		10,   // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		1, // cursorRow
+		1, 0, // cursorRow, cursorCol
 		"test.txt",
 	)
 
@@ -1531,7 +1534,7 @@ func TestIncrementalStageBuilder_MaxVisibleLines(t *testing.T) {
 		10,   // proximityThreshold (high to prevent gap splits)
 		2,    // maxVisibleLines - force split after 2 lines
 		0, 0, // viewport disabled
-		3, // cursorRow
+		3, 0, // cursorRow, cursorCol
 		"test.py",
 	)
 
@@ -1598,7 +1601,7 @@ func TestIncrementalStageBuilder_MaxVisibleLines_ThreeStages(t *testing.T) {
 		10,   // proximityThreshold (high to prevent gap splits)
 		2,    // maxVisibleLines - force split after 2 lines
 		0, 0, // viewport disabled
-		3, // cursorRow
+		3, 0, // cursorRow, cursorCol
 		"test.py",
 	)
 
@@ -1666,7 +1669,7 @@ func TestIncrementalStageBuilder_BlankLineAdditions(t *testing.T) {
 		10,   // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		3, // cursorRow (on partial line)
+		3, 0, // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -1759,7 +1762,7 @@ func TestIncrementalStageBuilder_EmptyLineFilledWithContent(t *testing.T) {
 		10,   // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		3,    // cursorRow
+		3, 0, // cursorRow, cursorCol
 		"test.txt",
 	)
 
@@ -1831,7 +1834,7 @@ func TestIncrementalStageBuilder_ModificationBufferLineUsesOldPosition(t *testin
 		10,   // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		6, // cursorRow - cursor on "second line" (buffer line 6)
+		6, 0, // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -1880,7 +1883,7 @@ func TestIncrementalStageBuilder_AdditionsBeforeCursorModificationAnchoredAtCurs
 		10,   // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		6, // cursorRow - cursor on "cursor line content" (buffer line 6)
+		6, 0, // cursorRow, cursorCol
 		"test.go",
 	)
 
@@ -1935,7 +1938,7 @@ func TestIncrementalStageBuilder_WhitespaceLineExpansion(t *testing.T) {
 		10,   // proximityThreshold
 		0,    // maxVisibleLines (disabled)
 		0, 0, // viewport disabled
-		6, // cursorRow - cursor on whitespace line (buffer line 6)
+		6, 0, // cursorRow, cursorCol
 		"test.py",
 	)
 
