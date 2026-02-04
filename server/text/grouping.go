@@ -108,13 +108,26 @@ func setRenderHint(group *Group, change LineChange) {
 	}
 }
 
-// ValidateRenderHintsForCursor downgrades append_chars to regular modification
-// when the change starts before the cursor position on the cursor line.
-// This prevents ghost text from appearing before the cursor.
+// ValidateRenderHintsForCursor downgrades character-level hints to regular modification
+// when the cursor would be hidden under the overlay. This switches to side-by-side
+// rendering so the cursor remains visible.
+//
+// For append_chars: downgrade when cursor is past the append position (ColStart < cursorCol)
+// For replace_chars: downgrade when cursor is at or past the change start (ColStart <= cursorCol)
 func ValidateRenderHintsForCursor(groups []*Group, cursorRow, cursorCol int) {
 	for _, g := range groups {
-		if g.RenderHint == "append_chars" && g.BufferLine == cursorRow && g.ColStart < cursorCol {
-			g.RenderHint = ""
+		if g.BufferLine != cursorRow {
+			continue
+		}
+		switch g.RenderHint {
+		case "append_chars":
+			if g.ColStart < cursorCol {
+				g.RenderHint = ""
+			}
+		case "replace_chars":
+			if g.ColStart <= cursorCol {
+				g.RenderHint = ""
+			}
 		}
 	}
 }
