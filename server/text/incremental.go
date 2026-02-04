@@ -100,20 +100,32 @@ func (b *IncrementalDiffBuilder) AddLine(line string) *LineChange {
 
 // findMatchingOldLine searches for the best matching old line for the given new line.
 // Returns the 1-indexed old line number, or 0 if no match found.
+//
+// The matching priority is:
+// 1. Exact match at expected position (fastest path for unchanged lines)
+// 2. Empty/whitespace old line with content new line (append_chars scenario)
+// 3. Exact match anywhere in search window (handles model reordering)
+// 4. Prefix match at expected position (completion/append_chars)
+// 5. Similarity match at expected position with priority (fixes mismatch bug)
+// 6. Prefix match anywhere in window
+// 7. Best similarity match in window
 func (b *IncrementalDiffBuilder) findMatchingOldLine(newLine string, _ int) int {
 	if len(b.OldLines) == 0 {
 		return 0
 	}
 
-	// First, check for exact match at expected position
 	expectedPos := b.oldLineIdx
+	searchStart := max(0, expectedPos-2)
+	searchEnd := min(len(b.OldLines), expectedPos+10)
+
+	// Priority 1: Exact match at expected position
 	if expectedPos < len(b.OldLines) && !b.usedOldLines[expectedPos+1] {
 		if b.OldLines[expectedPos] == newLine {
 			return expectedPos + 1 // 1-indexed
 		}
-		// Check if old line at expected position is empty/whitespace-only and new line has content.
-		// These should match because filling an empty or whitespace-only line is a modification
-		// (append_chars), not an addition. This is critical for cursor-on-empty-line scenarios.
+
+		// Priority 2: Empty/whitespace old line at expected position with content new line.
+		// This is a modification (append_chars), not an addition.
 		oldLineTrimmed := strings.TrimSpace(b.OldLines[expectedPos])
 		newLineTrimmed := strings.TrimSpace(newLine)
 		if oldLineTrimmed == "" && newLineTrimmed != "" {
@@ -121,37 +133,57 @@ func (b *IncrementalDiffBuilder) findMatchingOldLine(newLine string, _ int) int 
 		}
 	}
 
-	// Search in a window around expected position
-	searchStart := max(0, expectedPos-2)
-	searchEnd := min(len(b.OldLines), expectedPos+10)
+	// Priority 3: Exact match anywhere in search window
+	for i := searchStart; i < searchEnd; i++ {
+		if b.usedOldLines[i+1] {
+			continue
+		}
+		if b.OldLines[i] == newLine {
+			return i + 1
+		}
+	}
 
+	// Priority 4: Prefix match at expected position
+	if expectedPos < len(b.OldLines) && !b.usedOldLines[expectedPos+1] {
+		oldLineTrimmedRight := strings.TrimRight(b.OldLines[expectedPos], " \t")
+		if len(oldLineTrimmedRight) > 0 && strings.HasPrefix(newLine, oldLineTrimmedRight) {
+			return expectedPos + 1 // 1-indexed
+		}
+	}
+
+	// Priority 5: Similarity match at expected position with priority.
+	// This gives priority to the expected position when similarity is REASONABLY HIGH,
+	// even if a line further away might have slightly higher similarity.
+	// Use a higher threshold (0.35) to avoid false matches on barely-similar lines.
+	// This fixes the bug where extended if conditions were matched to template strings.
+	const expectedPositionSimilarityThreshold = 0.35
+	if expectedPos < len(b.OldLines) && !b.usedOldLines[expectedPos+1] {
+		expectedSimilarity := LineSimilarity(newLine, b.OldLines[expectedPos])
+		if expectedSimilarity > expectedPositionSimilarityThreshold {
+			return expectedPos + 1 // 1-indexed
+		}
+	}
+
+	// Priority 6: Prefix match anywhere in window
+	for i := searchStart; i < searchEnd; i++ {
+		if b.usedOldLines[i+1] || i == expectedPos {
+			continue
+		}
+		oldLineTrimmed := strings.TrimRight(b.OldLines[i], " \t")
+		if len(oldLineTrimmed) > 0 && strings.HasPrefix(newLine, oldLineTrimmed) {
+			return i + 1
+		}
+	}
+
+	// Priority 7: Best similarity match in window (excluding expected position)
 	bestIdx := -1
 	bestSimilarity := b.similarityThreshold
 
 	for i := searchStart; i < searchEnd; i++ {
-		if b.usedOldLines[i+1] {
-			continue // Already matched
+		if b.usedOldLines[i+1] || i == expectedPos {
+			continue
 		}
-
-		oldLine := b.OldLines[i]
-
-		// Check exact match first
-		if oldLine == newLine {
-			return i + 1
-		}
-
-		// Check prefix match: if oldLine (trimmed of trailing whitespace) is a
-		// non-empty prefix of newLine, this is a completion (append_chars).
-		// Similarity-based matching fails when the new line is much longer than
-		// the old line, but a prefix relationship clearly indicates a match.
-		// Trailing whitespace is trimmed because it's often insignificant.
-		oldLineTrimmed := strings.TrimRight(oldLine, " \t")
-		if len(oldLineTrimmed) > 0 && strings.HasPrefix(newLine, oldLineTrimmed) {
-			return i + 1
-		}
-
-		// Check similarity
-		similarity := LineSimilarity(newLine, oldLine)
+		similarity := LineSimilarity(newLine, b.OldLines[i])
 		if similarity > bestSimilarity {
 			bestSimilarity = similarity
 			bestIdx = i
