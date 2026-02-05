@@ -31,15 +31,6 @@ local awaiting_completion_after_jump = false
 ---@type boolean
 local text_changed_this_tick = false
 
--- Function to clear all visible completions and predictions
-local function clear_all_completions()
-	-- Clear cursor prediction UI
-	ui.close_all()
-
-	-- Send reject event to server
-	daemon.send_reject()
-end
-
 -- Accept key handler
 ---@return string
 local function on_accept()
@@ -87,50 +78,31 @@ local function on_trigger()
 	daemon.send_event_immediate("trigger_completion")
 end
 
+-- Update a single keymap slot: clear old binding if changed, set new one
+local function update_keymap(name, new_key, handler, opts)
+	if current_keymaps[name] and current_keymaps[name] ~= new_key then
+		pcall(vim.keymap.del, "i", current_keymaps[name])
+		pcall(vim.keymap.del, "n", current_keymaps[name])
+		current_keymaps[name] = nil
+	end
+	if new_key then
+		vim.keymap.set("i", new_key, handler, opts)
+		vim.keymap.set("n", new_key, handler, opts)
+		current_keymaps[name] = new_key
+	end
+end
+
 -- Set up keymaps (can be called multiple times when config changes)
 local function setup_keymaps()
 	local cfg = config.get()
+	local expr_opts = { noremap = true, silent = true, expr = true }
+	local plain_opts = { noremap = true, silent = true }
 
-	-- Clear old keymaps if they were set with different keys
-	if current_keymaps.accept and current_keymaps.accept ~= cfg.keymaps.accept then
-		pcall(vim.keymap.del, "i", current_keymaps.accept)
-		pcall(vim.keymap.del, "n", current_keymaps.accept)
-		current_keymaps.accept = nil
-	end
-	if current_keymaps.partial_accept and current_keymaps.partial_accept ~= cfg.keymaps.partial_accept then
-		pcall(vim.keymap.del, "i", current_keymaps.partial_accept)
-		pcall(vim.keymap.del, "n", current_keymaps.partial_accept)
-		current_keymaps.partial_accept = nil
-	end
+	update_keymap("accept", cfg.keymaps.accept, on_accept, expr_opts)
+	update_keymap("partial_accept", cfg.keymaps.partial_accept, on_partial_accept, expr_opts)
+	update_keymap("trigger", cfg.keymaps.trigger, on_trigger, plain_opts)
 
-	-- Set up new keymaps
-	if cfg.keymaps.accept then
-		local accept_key = cfg.keymaps.accept --[[@as string]]
-		vim.keymap.set("i", accept_key, on_accept, { noremap = true, silent = true, expr = true })
-		vim.keymap.set("n", accept_key, on_accept, { noremap = true, silent = true, expr = true })
-		current_keymaps.accept = accept_key
-	end
-	if cfg.keymaps.partial_accept then
-		local partial_key = cfg.keymaps.partial_accept --[[@as string]]
-		vim.keymap.set("i", partial_key, on_partial_accept, { noremap = true, silent = true, expr = true })
-		vim.keymap.set("n", partial_key, on_partial_accept, { noremap = true, silent = true, expr = true })
-		current_keymaps.partial_accept = partial_key
-	end
-
-	-- Handle trigger keymap
-	if current_keymaps.trigger and current_keymaps.trigger ~= cfg.keymaps.trigger then
-		pcall(vim.keymap.del, "i", current_keymaps.trigger)
-		pcall(vim.keymap.del, "n", current_keymaps.trigger)
-		current_keymaps.trigger = nil
-	end
-	if cfg.keymaps.trigger then
-		local trigger_key = cfg.keymaps.trigger --[[@as string]]
-		vim.keymap.set("i", trigger_key, on_trigger, { noremap = true, silent = true })
-		vim.keymap.set("n", trigger_key, on_trigger, { noremap = true, silent = true })
-		current_keymaps.trigger = trigger_key
-	end
-
-	vim.keymap.set("n", "<Esc>", on_escape, { noremap = true, silent = true, expr = true })
+	vim.keymap.set("n", "<Esc>", on_escape, expr_opts)
 end
 
 -- Set up autocommands (only once)
@@ -188,50 +160,35 @@ local function setup_autocommands()
 		end,
 	})
 
+	-- Shared cursor movement handler
+	local function handle_cursor_moved(is_insert)
+		if is_insert and text_changed_this_tick then
+			return
+		end
+		if skip_next_cursor_moved then
+			skip_next_cursor_moved = false
+			return
+		end
+		if awaiting_completion_after_jump then
+			return
+		end
+		if ui.has_cursor_prediction() or ui.has_completion() then
+			ui.ensure_close_all()
+		end
+		daemon.send_event("cursor_moved")
+	end
+
 	-- Cursor movement events (normal mode)
 	vim.api.nvim_create_autocmd({ "CursorMoved" }, {
 		callback = function()
-			-- Skip if cursor movement events are temporarily suppressed (e.g., after tab key)
-			if skip_next_cursor_moved then
-				skip_next_cursor_moved = false
-				return
-			end
-
-			-- Skip while awaiting completion after cursor target jump
-			if awaiting_completion_after_jump then
-				return
-			end
-
-			if ui.has_cursor_prediction() or ui.has_completion() then
-				ui.ensure_close_all()
-			end
-			daemon.send_event("cursor_moved")
+			handle_cursor_moved(false)
 		end,
 	})
 
 	-- Cursor movement events (insert mode - e.g., arrow keys)
 	vim.api.nvim_create_autocmd({ "CursorMovedI" }, {
 		callback = function()
-			-- Skip if text changed this tick (typing already triggers completion request)
-			if text_changed_this_tick then
-				return
-			end
-
-			-- Skip if cursor movement events are temporarily suppressed (e.g., after tab key)
-			if skip_next_cursor_moved then
-				skip_next_cursor_moved = false
-				return
-			end
-
-			-- Skip while awaiting completion after cursor target jump
-			if awaiting_completion_after_jump then
-				return
-			end
-
-			if ui.has_cursor_prediction() or ui.has_completion() then
-				ui.ensure_close_all()
-			end
-			daemon.send_event("cursor_moved")
+			handle_cursor_moved(true)
 		end,
 	})
 
@@ -287,7 +244,8 @@ end
 
 -- Clear all completions (exposed for manual use)
 function events.clear_all_completions()
-	clear_all_completions()
+	ui.close_all()
+	daemon.send_reject()
 end
 
 -- Clear the awaiting completion flag (called when completion is received)

@@ -18,6 +18,24 @@ local function is_process_running(pid)
 	return vim.v.shell_error == 0
 end
 
+-- Read daemon PID from file and check if it's running
+---@param pid_path string
+---@return integer|nil pid, boolean running
+local function read_daemon_pid(pid_path)
+	if vim.fn.filereadable(pid_path) == 0 then
+		return nil, false
+	end
+	local pid_content = vim.fn.readfile(pid_path)
+	if #pid_content == 0 then
+		return nil, false
+	end
+	local pid = tonumber(pid_content[1])
+	if not pid then
+		return nil, false
+	end
+	return pid, is_process_running(pid)
+end
+
 -- Start the daemon process
 local function start_daemon()
 	local cfg = config.get()
@@ -95,16 +113,7 @@ local function start_daemon()
 		need_daemon_start = true
 	else
 		-- Socket exists, check if daemon is actually running
-		local daemon_running = false
-		if vim.fn.filereadable(pid_path) == 1 then
-			local pid_content = vim.fn.readfile(pid_path)
-			if #pid_content > 0 then
-				local pid = tonumber(pid_content[1])
-				if pid then
-					daemon_running = is_process_running(pid)
-				end
-			end
-		end
+		local _, daemon_running = read_daemon_pid(pid_path)
 
 		if not daemon_running then
 			-- Stale socket, clean up and start fresh
@@ -220,17 +229,10 @@ function daemon.check_daemon_status()
 	}
 
 	-- Check if PID file exists and process is running
-	if status.pid_file_exists then
-		local pid_content = vim.fn.readfile(pid_path)
-		if #pid_content > 0 then
-			local pid = tonumber(pid_content[1])
-			if pid then
-				status.pid = pid
-				-- Check if process exists (works on Unix systems)
-				vim.fn.system("kill -0 " .. pid .. " 2>/dev/null")
-				status.daemon_running = vim.v.shell_error == 0
-			end
-		end
+	local pid, running = read_daemon_pid(pid_path)
+	if pid then
+		status.pid = pid
+		status.daemon_running = running
 	end
 
 	return status
@@ -281,20 +283,13 @@ function daemon.stop_daemon()
 		return true, "Daemon not running (no PID file)"
 	end
 
-	local pid_content = vim.fn.readfile(pid_path)
-	if #pid_content == 0 then
-		cleanup_stale_files()
-		return true, "Cleaned up stale files (empty PID file)"
-	end
-
-	local pid = tonumber(pid_content[1])
+	local pid, running = read_daemon_pid(pid_path)
 	if not pid then
 		cleanup_stale_files()
 		return true, "Cleaned up stale files (invalid PID)"
 	end
 
-	-- Check if process is actually running
-	if not is_process_running(pid) then
+	if not running then
 		cleanup_stale_files()
 		return true, "Cleaned up stale files (process not running)"
 	end

@@ -1,8 +1,11 @@
+---@diagnostic disable: undefined-doc-name
 local config = require("cursortab.config")
 local daemon = require("cursortab.daemon")
 local source = require("cursortab.source")
 
 local M = {}
+
+local empty_response = { items = {}, is_incomplete_forward = false, is_incomplete_backward = false }
 
 if vim.tbl_isempty(vim.api.nvim_get_hl(0, { name = "BlinkCmpItemKindCursortab" })) then
 	vim.api.nvim_set_hl(0, "BlinkCmpItemKindCursortab", { link = "BlinkCmpItemKind" })
@@ -23,26 +26,18 @@ function M:enabled()
 end
 
 ---Return completions based on current append_chars state.
----@param ctx blink.cmp.Context
+---@param _ blink.cmp.Context
 ---@param callback fun(response: blink.cmp.CompletionResponse | nil)
-function M:get_completions(ctx, callback)
+function M:get_completions(_, callback)
 	local cfg = config.get()
 	if not (cfg.blink and cfg.blink.enabled) or not daemon.is_enabled() then
-		callback({
-			items = {},
-			is_incomplete_forward = false,
-			is_incomplete_backward = false,
-		})
+		callback(empty_response)
 		return
 	end
 
 	local append_item = source.get_append_item()
 	if not append_item then
-		callback({
-			items = {},
-			is_incomplete_forward = false,
-			is_incomplete_backward = false,
-		})
+		callback(empty_response)
 		return
 	end
 

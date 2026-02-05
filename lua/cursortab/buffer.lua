@@ -12,6 +12,9 @@ local buffer = {}
 ---@field current_buf integer|nil
 ---@field current_win integer|nil
 
+-- Filetypes to skip (set for O(1) lookup)
+local skip_filetypes = { [""] = true, help = true, qf = true, netrw = true, fugitive = true, NvimTree = true }
+
 -- Global buffer state cache to avoid expensive API calls on every cursor movement
 ---@type BufferState
 local buffer_state = {
@@ -55,19 +58,8 @@ local function update_buffer_state()
 	buffer_state.is_readonly = vim.api.nvim_get_option_value("readonly", { buf = current_buf })
 	buffer_state.filetype = vim.api.nvim_get_option_value("filetype", { buf = current_buf })
 
-	-- Check if we should skip this buffer type
-	---@type string[]
-	local skip_filetypes = { "", "help", "qf", "netrw", "fugitive", "NvimTree" }
-	---@type boolean
-	local should_skip_filetype = false
-	for _, ft in ipairs(skip_filetypes) do
-		if buffer_state.filetype == ft then
-			should_skip_filetype = true
-			break
-		end
-	end
-
 	-- Combined check: should we skip idle completions for this buffer?
+	local should_skip_filetype = skip_filetypes[buffer_state.filetype] or false
 	buffer_state.should_skip = buffer_state.is_floating_window
 		or not buffer_state.is_modifiable
 		or buffer_state.is_readonly
