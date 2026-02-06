@@ -2179,9 +2179,9 @@ func TestIncrementalStageBuilder_InsertedLineIsAddition(t *testing.T) {
 
 	builder := NewIncrementalStageBuilder(
 		oldLines,
-		1, // baseLineOffset
-		3, // proximityThreshold
-		0, // maxVisibleLines
+		1,    // baseLineOffset
+		3,    // proximityThreshold
+		0,    // maxVisibleLines
 		0, 0, // viewport (disabled)
 		1, 0, // cursor at line 1
 		"test.go",
