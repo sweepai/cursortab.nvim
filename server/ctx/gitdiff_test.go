@@ -20,7 +20,7 @@ func TestExtractChangedSymbols_AddedDeclarations(t *testing.T) {
 +	Port int
 `
 
-	symbols := extractChangedSymbols(diff)
+	symbols := extractChangedSymbols(diff, 50)
 
 	found := map[string]bool{}
 	for _, s := range symbols {
@@ -40,7 +40,7 @@ func TestExtractChangedSymbols_RemovedDeclarations(t *testing.T) {
 -}
 `
 
-	symbols := extractChangedSymbols(diff)
+	symbols := extractChangedSymbols(diff, 50)
 
 	found := map[string]bool{}
 	for _, s := range symbols {
@@ -58,7 +58,7 @@ func TestExtractChangedSymbols_AddedAndRemoved(t *testing.T) {
 +func newName() error {
 `
 
-	symbols := extractChangedSymbols(diff)
+	symbols := extractChangedSymbols(diff, 50)
 
 	found := map[string]bool{}
 	for _, s := range symbols {
@@ -84,7 +84,7 @@ diff --git a/lib.rs b/lib.rs
 +impl Handler for Server {
 `
 
-	symbols := extractChangedSymbols(diff)
+	symbols := extractChangedSymbols(diff, 50)
 
 	found := map[string]bool{}
 	for _, s := range symbols {
@@ -97,7 +97,7 @@ diff --git a/lib.rs b/lib.rs
 }
 
 func TestExtractChangedSymbols_Empty(t *testing.T) {
-	symbols := extractChangedSymbols("")
+	symbols := extractChangedSymbols("", 50)
 	assert.Nil(t, symbols, "empty diff")
 }
 
@@ -110,7 +110,7 @@ func TestExtractChangedSymbols_NoDeclarations(t *testing.T) {
 +new text
 `
 
-	symbols := extractChangedSymbols(diff)
+	symbols := extractChangedSymbols(diff, 50)
 	assert.Equal(t, 0, len(symbols), "no declarations in plain text diff")
 }
 
@@ -124,7 +124,7 @@ func TestExtractChangedSymbols_Deduplication(t *testing.T) {
 +func repeated() {
 `
 
-	symbols := extractChangedSymbols(diff)
+	symbols := extractChangedSymbols(diff, 50)
 
 	count := 0
 	for _, s := range symbols {
@@ -147,8 +147,8 @@ func TestExtractChangedSymbols_MaxCap(t *testing.T) {
 	}
 	diff := sb.String()
 
-	symbols := extractChangedSymbols(diff)
-	assert.LessOrEqual(t, len(symbols), maxChangedSymbols, "should cap at maxChangedSymbols")
+	symbols := extractChangedSymbols(diff, 50)
+	assert.LessOrEqual(t, len(symbols), 50, "should cap at maxSymbols")
 }
 
 func TestIsDeclarationLine(t *testing.T) {

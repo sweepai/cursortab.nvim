@@ -42,6 +42,64 @@ type Buffer interface {
 // Implemented by inline.Provider, sweep.Provider, zeta.Provider.
 type Provider interface {
 	GetCompletion(ctx context.Context, req *types.CompletionRequest) (*types.CompletionResponse, error)
+	GetContextLimits() ContextLimits
+}
+
+// ContextLimits controls how much context is gathered and sent per provider.
+// Zero values use defaults. -1 means the feature is disabled.
+type ContextLimits struct {
+	MaxUserActions     int // Ring buffer size for user action tracking (default: 16)
+	FileChunkLines     int // Lines per recent file snapshot (default: 30)
+	MaxRecentSnapshots int // Number of recent file snapshots (default: 3, -1 = disabled)
+	MaxDiffBytes       int // Git diff byte threshold before switching to symbols (default: 4096)
+	MaxChangedSymbols  int // Max symbols extracted from large diffs (default: 50)
+	MaxSiblings        int // Max treesitter sibling nodes (default: 50)
+	MaxInputLines      int // Input line limit for hosted APIs (default: 50000)
+	MaxInputBytes      int // Input byte limit for hosted APIs (default: 10_000_000)
+}
+
+// DefaultContextLimits returns the default context limits.
+func DefaultContextLimits() ContextLimits {
+	return ContextLimits{
+		MaxUserActions:     16,
+		FileChunkLines:     30,
+		MaxRecentSnapshots: 3,
+		MaxDiffBytes:       4096,
+		MaxChangedSymbols:  50,
+		MaxSiblings:        50,
+		MaxInputLines:      50_000,
+		MaxInputBytes:      10_000_000,
+	}
+}
+
+// WithDefaults returns a copy with zero values replaced by defaults.
+func (cl ContextLimits) WithDefaults() ContextLimits {
+	d := DefaultContextLimits()
+	if cl.MaxUserActions == 0 {
+		cl.MaxUserActions = d.MaxUserActions
+	}
+	if cl.FileChunkLines == 0 {
+		cl.FileChunkLines = d.FileChunkLines
+	}
+	if cl.MaxRecentSnapshots == 0 {
+		cl.MaxRecentSnapshots = d.MaxRecentSnapshots
+	}
+	if cl.MaxDiffBytes == 0 {
+		cl.MaxDiffBytes = d.MaxDiffBytes
+	}
+	if cl.MaxChangedSymbols == 0 {
+		cl.MaxChangedSymbols = d.MaxChangedSymbols
+	}
+	if cl.MaxSiblings == 0 {
+		cl.MaxSiblings = d.MaxSiblings
+	}
+	if cl.MaxInputLines == 0 {
+		cl.MaxInputLines = d.MaxInputLines
+	}
+	if cl.MaxInputBytes == 0 {
+		cl.MaxInputBytes = d.MaxInputBytes
+	}
+	return cl
 }
 
 // LineStreamProvider extends Provider with line-by-line streaming capabilities.

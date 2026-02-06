@@ -258,6 +258,10 @@ func newMockProvider() *mockProvider {
 	}
 }
 
+func (p *mockProvider) GetContextLimits() ContextLimits {
+	return DefaultContextLimits()
+}
+
 func (p *mockProvider) GetCompletion(ctx context.Context, req *types.CompletionRequest) (*types.CompletionResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

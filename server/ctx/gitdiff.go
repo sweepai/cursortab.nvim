@@ -10,12 +10,6 @@ import (
 	"cursortab/types"
 )
 
-// maxDiffSize is the threshold (in bytes) below which the full diff is used.
-// Above this, we extract only changed declaration symbols.
-const maxDiffSize = 4096
-
-const maxChangedSymbols = 50
-
 // gitDiff gathers staged diff context for commit message editing.
 type gitDiff struct{}
 
@@ -36,7 +30,7 @@ func (g *gitDiff) Gather(ctx context.Context, req *SourceRequest) *types.Context
 	}
 
 	// Use full diff if small enough
-	if len(fullDiff) <= maxDiffSize {
+	if len(fullDiff) <= req.MaxDiffBytes {
 		return &types.ContextResult{
 			GitDiff: &types.GitDiffContext{Diff: fullDiff},
 		}
@@ -48,7 +42,7 @@ func (g *gitDiff) Gather(ctx context.Context, req *SourceRequest) *types.Context
 		return nil
 	}
 
-	symbols := extractChangedSymbols(minimalDiff)
+	symbols := extractChangedSymbols(minimalDiff, req.MaxChangedSymbols)
 	if len(symbols) == 0 {
 		return nil
 	}
@@ -72,7 +66,7 @@ func runGit(ctx context.Context, dir string, args ...string) string {
 
 // extractChangedSymbols parses a unified diff (-U0) and extracts function/type
 // signatures from added/removed declaration lines in git diff format.
-func extractChangedSymbols(diff string) []string {
+func extractChangedSymbols(diff string, maxSymbols int) []string {
 	if diff == "" {
 		return nil
 	}
@@ -99,7 +93,7 @@ func extractChangedSymbols(diff string) []string {
 			content := strings.TrimSpace(line[1:])
 			if isDeclarationLine(content) {
 				sym := "+" + content
-				if _, ok := seen[sym]; !ok && len(symbols) < maxChangedSymbols {
+				if _, ok := seen[sym]; !ok && len(symbols) < maxSymbols {
 					seen[sym] = struct{}{}
 					symbols = append(symbols, sym)
 				}
@@ -112,7 +106,7 @@ func extractChangedSymbols(diff string) []string {
 			content := strings.TrimSpace(line[1:])
 			if isDeclarationLine(content) {
 				sym := "-" + content
-				if _, ok := seen[sym]; !ok && len(symbols) < maxChangedSymbols {
+				if _, ok := seen[sym]; !ok && len(symbols) < maxSymbols {
 					seen[sym] = struct{}{}
 					symbols = append(symbols, sym)
 				}

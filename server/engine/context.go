@@ -40,7 +40,7 @@ func (e *Engine) saveCurrentFileState() {
 
 	state := e.newFileStateFromBuffer()
 	// Capture first lines for FileChunks context
-	state.FirstLines = copyFirstN(e.buffer.Lines(), FileChunkLines)
+	state.FirstLines = copyFirstN(e.buffer.Lines(), e.contextLimits.FileChunkLines)
 	e.fileStateStore[e.buffer.Path()] = state
 	e.trimFileStateStore(3) // Keep at most 3 files for FileChunks
 }
@@ -54,7 +54,7 @@ func (e *Engine) handleFileSwitch(oldPath, newPath string, currentLines []string
 	if oldPath != "" {
 		state := e.newFileStateFromBuffer()
 		// Capture first lines for FileChunks context
-		state.FirstLines = copyFirstN(currentLines, FileChunkLines)
+		state.FirstLines = copyFirstN(currentLines, e.contextLimits.FileChunkLines)
 		e.fileStateStore[oldPath] = state
 	}
 

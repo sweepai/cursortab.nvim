@@ -13,7 +13,7 @@ type treesitter struct {
 }
 
 func (t *treesitter) Gather(_ context.Context, req *SourceRequest) *types.ContextResult {
-	ts := t.buffer.TreesitterSymbols(req.CursorRow, req.CursorCol)
+	ts := t.buffer.TreesitterSymbols(req.CursorRow, req.CursorCol, req.MaxSiblings)
 	if ts == nil {
 		return nil
 	}

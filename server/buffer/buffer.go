@@ -13,10 +13,6 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-// MaxSiblings is the maximum number of sibling scope nodes to include
-// in treesitter context. When exceeded, siblings closest to cursor are kept.
-const MaxSiblings = 50
-
 type Config struct {
 	NsID int
 }
@@ -626,7 +622,7 @@ func (b *NvimBuffer) LinterErrors() *types.LinterErrors {
 
 // TreesitterSymbols retrieves treesitter scope context around the cursor position.
 // Returns nil gracefully if no treesitter parser is available for the buffer.
-func (b *NvimBuffer) TreesitterSymbols(row, col int) *types.TreesitterContext {
+func (b *NvimBuffer) TreesitterSymbols(row, col, maxSiblings int) *types.TreesitterContext {
 	if b.client == nil {
 		return nil
 	}
@@ -635,7 +631,7 @@ func (b *NvimBuffer) TreesitterSymbols(row, col int) *types.TreesitterContext {
 	batch := b.client.NewBatch()
 	batch.ExecLua(
 		`return require('cursortab.treesitter').get_context(...)`,
-		&result, int(b.id), row, col, MaxSiblings,
+		&result, int(b.id), row, col, maxSiblings,
 	)
 
 	if err := batch.Execute(); err != nil {

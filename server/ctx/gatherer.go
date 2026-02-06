@@ -14,10 +14,13 @@ const GatherTimeout = 200 * time.Millisecond
 
 // SourceRequest contains metadata passed to each context source.
 type SourceRequest struct {
-	FilePath      string
-	CursorRow     int // 1-indexed
-	CursorCol     int // 0-indexed
-	WorkspacePath string
+	FilePath          string
+	CursorRow         int // 1-indexed
+	CursorCol         int // 0-indexed
+	WorkspacePath     string
+	MaxDiffBytes      int // Git diff byte threshold (0 = default 4096)
+	MaxChangedSymbols int // Max symbols from large diffs (0 = default 50)
+	MaxSiblings       int // Max treesitter siblings (0 = default 50)
 }
 
 // NewGatherer creates a Gatherer with all built-in context sources.

@@ -80,6 +80,12 @@ type Provider struct {
 	Validators     []Validator        // Validators run on first line during streaming
 	StopTokens     []string           // Stop tokens for streaming (provider-specific)
 	DiffBuilder    DiffHistoryBuilder // Processes diff history for the prompt
+	ContextLimits  engine.ContextLimits
+}
+
+// GetContextLimits implements engine.Provider
+func (p *Provider) GetContextLimits() engine.ContextLimits {
+	return p.ContextLimits.WithDefaults()
 }
 
 // GetCompletion implements engine.Provider

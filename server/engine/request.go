@@ -17,10 +17,13 @@ func (e *Engine) gatherContext(filePath string) *types.ContextResult {
 		return nil
 	}
 	return e.contextGatherer.Gather(e.mainCtx, &ctx.SourceRequest{
-		FilePath:      filePath,
-		CursorRow:     e.buffer.Row(),
-		CursorCol:     e.buffer.Col(),
-		WorkspacePath: e.WorkspacePath,
+		FilePath:          filePath,
+		CursorRow:         e.buffer.Row(),
+		CursorCol:         e.buffer.Col(),
+		WorkspacePath:     e.WorkspacePath,
+		MaxDiffBytes:      e.contextLimits.MaxDiffBytes,
+		MaxChangedSymbols: e.contextLimits.MaxChangedSymbols,
+		MaxSiblings:       e.contextLimits.MaxSiblings,
 	})
 }
 
@@ -46,7 +49,7 @@ func (e *Engine) requestCompletion(source types.CompletionSource) {
 		ViewportHeight:        e.getViewportHeightConstraint(),
 		MaxVisibleLines:       e.config.MaxVisibleLines,
 		AdditionalContext:     e.gatherContext(e.buffer.Path()),
-		RecentBufferSnapshots: e.getRecentBufferSnapshots(e.buffer.Path(), MaxRecentBufferSnapshots),
+		RecentBufferSnapshots: e.getRecentBufferSnapshots(e.buffer.Path(), e.contextLimits.MaxRecentSnapshots),
 		UserActions:           e.getUserActionsForFile(e.buffer.Path()),
 	}
 

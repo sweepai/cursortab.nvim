@@ -26,6 +26,7 @@ import (
 	"unicode/utf8"
 
 	"cursortab/buffer"
+	"cursortab/engine"
 	"cursortab/logger"
 	"cursortab/types"
 )
@@ -94,6 +95,21 @@ func NewProvider(buf *buffer.NvimBuffer) *Provider {
 	return &Provider{
 		buffer:        buf,
 		pendingResult: make(chan *CopilotResult, 1),
+	}
+}
+
+// GetContextLimits implements engine.Provider.
+// Copilot delegates all context gathering to its LSP server.
+func (p *Provider) GetContextLimits() engine.ContextLimits {
+	return engine.ContextLimits{
+		MaxUserActions:     -1,
+		FileChunkLines:     -1,
+		MaxRecentSnapshots: -1,
+		MaxDiffBytes:       -1,
+		MaxChangedSymbols:  -1,
+		MaxSiblings:        -1,
+		MaxInputLines:      -1,
+		MaxInputBytes:      -1,
 	}
 }
 

@@ -39,16 +39,6 @@ func (systemClock) Now() time.Time {
 	return time.Now()
 }
 
-// MaxUserActions is the maximum number of user actions to track
-const MaxUserActions = 16
-
-// FileChunkLines is the number of lines to capture from each file for FileChunks context
-const FileChunkLines = 30
-
-// MaxRecentBufferSnapshots is the number of recently accessed files to include
-// as cross-file context in completion requests.
-const MaxRecentBufferSnapshots = 3
-
 type Engine struct {
 	WorkspacePath string
 	WorkspaceID   string
@@ -105,7 +95,8 @@ type Engine struct {
 	contextGatherer *ctx.Gatherer
 
 	// Config options
-	config EngineConfig
+	config        EngineConfig
+	contextLimits ContextLimits
 
 	// Per-file state that persists across file switches (for context restoration)
 	fileStateStore map[string]*FileState
@@ -141,6 +132,7 @@ func NewEngine(provider Provider, buf Buffer, config EngineConfig, clock Clock, 
 		ctx:                    nil,
 		eventChan:              make(chan Event, 100),
 		config:                 config,
+		contextLimits:          provider.GetContextLimits(),
 		idleTimer:              nil,
 		textChangeTimer:        nil,
 		mu:                     sync.RWMutex{},
@@ -364,7 +356,10 @@ func (e *Engine) stopTextChangeTimer() {
 
 // recordUserAction adds an action to the ring buffer, evicting oldest if full
 func (e *Engine) recordUserAction(action *types.UserAction) {
-	if len(e.userActions) >= MaxUserActions {
+	if e.contextLimits.MaxUserActions < 0 {
+		return
+	}
+	if len(e.userActions) >= e.contextLimits.MaxUserActions {
 		e.userActions = e.userActions[1:] // Evict oldest
 	}
 	e.userActions = append(e.userActions, action)

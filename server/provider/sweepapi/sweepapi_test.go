@@ -12,6 +12,7 @@ import (
 
 	"cursortab/assert"
 	"cursortab/client/sweepapi"
+	"cursortab/engine"
 	"cursortab/types"
 
 	"github.com/andybalholm/brotli"
@@ -111,7 +112,8 @@ func TestFormatDiagnostics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatDiagnostics(tt.linterErrors)
+			p := &Provider{limits: engine.DefaultContextLimits()}
+			result := p.formatDiagnostics(tt.linterErrors)
 			assert.Equal(t, tt.wantLen, len(result), "chunk count")
 		})
 	}
