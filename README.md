@@ -5,8 +5,8 @@ Currently supports custom models and models form Zeta (Zed) and SweepAI.
 
 > [!WARNING]
 >
-> **This is an early-stage, beta project.** Expect bugs, incomplete features,
-> and breaking changes.
+> **This is an early-stage project.** Expect bugs, incomplete features, and
+> breaking changes. Make sure to regularly update the plugin.
 
 <p align="center">
     <img src="assets/demo.gif" width="600">
@@ -277,10 +277,6 @@ llama-server -m sweep-next-edit-1.5b.q8_0.v2.gguf --port 8000
 
 Sweep's hosted API for Next-Edit predictions. No local model setup required.
 
-> [!NOTE]
->
-> The hosted API runs `sweep-next-edit-7b` for better quality predictions.
-
 **Requirements:**
 
 - Create an account at [sweep.dev](https://sweep.dev/) and get your API token
@@ -458,9 +454,9 @@ cd server && go test ./...
 See the [provider feature comparison table](#providers) for capabilities. For
 the best experience:
 
-- If you have a consumer GPU and want to run locally, use **Sweep** with the
-  `sweep-next-edit-1.5b` model for fast local inference
-- Otherwise, use **Sweep API** for the best quality with the hosted
+- If you have a consumer GPU and want to run locally, use the `sweep` provider
+  with the `sweep-next-edit-1.5b` model for fast local inference
+- Otherwise, use the `sweepapi` for the best quality with the hosted
   `sweep-next-edit-7b` model
 
 </details>
@@ -472,12 +468,15 @@ the best experience:
 2. Decrease `provider.max_tokens` to reduce output length (also limits input
    context)
 
+The `github` provider is known to be slower than the rest.
+
 </details>
 
 <details>
 <summary>Why are completions not working?</summary>
 
-1. Update to the latest version and restart the daemon with `:CursortabRestart`
+1. Update to the latest version, restart Neovim and restart the daemon with
+   `:CursortabRestart`
 2. Increase `provider.completion_timeout` (default: 5000ms) to 10000 or more if
    your model is slow
 3. Increase `provider.max_tokens` to give the model more surrounding context
@@ -488,8 +487,8 @@ the best experience:
 <details>
 <summary>How do I update the plugin?</summary>
 
-Use your Neovim plugin manager to pull the latest changes, then run
-`:CursortabRestart` to restart the daemon.
+Use your Neovim plugin manager to pull the latest changes, then restart Neovim
+instance, and run `:CursortabRestart` to restart the daemon.
 
 </details>
 
