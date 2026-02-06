@@ -487,8 +487,9 @@ The `github` provider is known to be slower than the rest.
 <details>
 <summary>How do I update the plugin?</summary>
 
-Use your Neovim plugin manager to pull the latest changes, then restart Neovim
-instance, and run `:CursortabRestart` to restart the daemon.
+Use your Neovim plugin manager to pull the latest changes, then restart Neovim.
+The daemon will automatically restart if the configuration has changed. You can
+also run `:CursortabRestart` to force a restart.
 
 </details>
 
@@ -497,11 +498,11 @@ instance, and run `:CursortabRestart` to restart the daemon.
 
 The plugin runs a background daemon that persists after Neovim closes.
 Environment variables are only loaded when the daemon starts. If you add or
-change an environment variable (e.g., `SWEEPAPI_TOKEN` in your `.zshrc`), simply
-restarting Neovim or your shell won't update the daemon.
+change an environment variable (e.g., `SWEEPAPI_TOKEN` in your `.zshrc`), run
+`:CursortabRestart` to restart the daemon with the new environment variables.
 
-**Solution:** Run `:CursortabRestart` to restart the daemon with the new
-environment variables.
+Note: If you change plugin configuration (e.g., switch providers), the daemon
+will automatically restart on the next `setup()` call.
 
 </details>
 

@@ -107,6 +107,7 @@ local function start_daemon()
 
 	-- Check if we need to start the daemon
 	local need_daemon_start = false
+	local config_path = state_dir .. "/cursortab.config.json"
 
 	if vim.fn.filereadable(socket_path) == 0 then
 		-- No socket, need to start daemon
@@ -122,6 +123,13 @@ local function start_daemon()
 				vim.fn.delete(pid_path)
 			end
 			need_daemon_start = true
+		elseif vim.fn.filereadable(config_path) == 1 then
+			-- Daemon is running, check if config has changed
+			local stored = table.concat(vim.fn.readfile(config_path), "\n")
+			if stored ~= json_config then
+				daemon.stop_daemon()
+				need_daemon_start = true
+			end
 		end
 	end
 
@@ -130,6 +138,9 @@ local function start_daemon()
 			env = env,
 			detach = true,
 		})
+
+		-- Write config so future connections can detect changes
+		vim.fn.writefile({ json_config }, config_path)
 
 		-- Wait for socket (max 1 second)
 		for _ = 1, 10 do
@@ -252,6 +263,7 @@ local function cleanup_stale_files()
 	local state_dir = cfg.state_dir
 	local socket_path = state_dir .. "/cursortab.sock"
 	local pid_path = state_dir .. "/cursortab.pid"
+	local config_path = state_dir .. "/cursortab.config.json"
 
 	-- Remove socket file if it exists
 	if vim.fn.filereadable(socket_path) == 1 then
@@ -261,6 +273,11 @@ local function cleanup_stale_files()
 	-- Remove pid file if it exists
 	if vim.fn.filereadable(pid_path) == 1 then
 		vim.fn.delete(pid_path)
+	end
+
+	-- Remove config file if it exists
+	if vim.fn.filereadable(config_path) == 1 then
+		vim.fn.delete(config_path)
 	end
 end
 
