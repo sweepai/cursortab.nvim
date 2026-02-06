@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cursortab/buffer"
+	"cursortab/ctx"
 	"cursortab/logger"
 	"cursortab/metrics"
 	"cursortab/text"
@@ -96,6 +97,9 @@ type Engine struct {
 	tokenStreamingState *TokenStreamingState
 	tokenStreamChan     <-chan string // Token stream channel (nil when not streaming)
 
+	// Context gatherer for additional completion context
+	contextGatherer *ctx.Gatherer
+
 	// Config options
 	config EngineConfig
 
@@ -114,7 +118,7 @@ type Engine struct {
 }
 
 // NewEngine creates a new Engine instance.
-func NewEngine(provider Provider, buf Buffer, config EngineConfig, clock Clock) (*Engine, error) {
+func NewEngine(provider Provider, buf Buffer, config EngineConfig, clock Clock, contextGatherer *ctx.Gatherer) (*Engine, error) {
 	workspacePath, err := os.Getwd()
 	if err != nil {
 		logger.Warn("error getting current directory, using home: %v", err)
@@ -128,6 +132,7 @@ func NewEngine(provider Provider, buf Buffer, config EngineConfig, clock Clock) 
 		provider:               provider,
 		buffer:                 buf,
 		clock:                  clock,
+		contextGatherer:        contextGatherer,
 		state:                  stateIdle,
 		ctx:                    nil,
 		eventChan:              make(chan Event, 100),

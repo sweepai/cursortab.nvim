@@ -268,7 +268,7 @@ func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionReque
 	recentChanges := formatRecentChanges(diffHistories)
 
 	// Format diagnostics as retrieval chunks
-	retrievalChunks := formatDiagnostics(req.LinterErrors)
+	retrievalChunks := formatDiagnostics(req.GetDiagnostics())
 
 	// Extract repo name from workspace path
 	repoName := filepath.Base(req.WorkspacePath)

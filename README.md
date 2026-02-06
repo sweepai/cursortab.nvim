@@ -158,6 +158,17 @@ Zeta, and Copilot.
 | `zeta`     |        |     ✓      |     ✓      |         ✓         |     ✓     | `zeta`                 |
 | `copilot`  |   ✓    |     ✓      |     ✓      |         ✓         |           | GitHub Copilot         |
 
+**Context Per Provider:**
+
+| Context              | inline | fim | sweep | zeta | sweepapi | copilot |
+| -------------------- | :----: | :-: | :---: | :--: | :------: | :-----: |
+| Buffer content       |   ✓    |  ✓  |   ✓   |  ✓   |    ✓     |    ✓    |
+| Edit history         |        |     |   ✓   |  ✓   |    ✓     |         |
+| Previous file state  |        |     |   ✓   |      |          |         |
+| LSP diagnostics      |        |     |       |  ✓   |    ✓     |         |
+| Recent files         |        |     |       |      |    ✓     |         |
+| User actions         |        |     |       |      |    ✓     |         |
+
 #### Inline Provider (Default)
 
 <details>

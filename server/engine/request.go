@@ -4,11 +4,20 @@ import (
 	"context"
 	"errors"
 
+	"cursortab/ctx"
 	"cursortab/logger"
 	"cursortab/text"
 	"cursortab/types"
 	"cursortab/utils"
 )
+
+// gatherContext delegates to the context gatherer if configured.
+func (e *Engine) gatherContext(filePath string) *types.ContextResult {
+	if e.contextGatherer == nil {
+		return nil
+	}
+	return e.contextGatherer.Gather(e.mainCtx, &ctx.SourceRequest{FilePath: filePath})
+}
 
 // requestCompletion initiates a completion request.
 func (e *Engine) requestCompletion(source types.CompletionSource) {
@@ -31,7 +40,7 @@ func (e *Engine) requestCompletion(source types.CompletionSource) {
 		CursorCol:             e.buffer.Col(),
 		ViewportHeight:        e.getViewportHeightConstraint(),
 		MaxVisibleLines:       e.config.MaxVisibleLines,
-		LinterErrors:          e.buffer.LinterErrors(),
+		AdditionalContext:     e.gatherContext(e.buffer.Path()),
 		RecentBufferSnapshots: e.getRecentBufferSnapshots(e.buffer.Path(), 3),
 		UserActions:           e.getUserActionsForFile(e.buffer.Path()),
 	}
@@ -116,7 +125,6 @@ func (e *Engine) requestPrefetch(source types.CompletionSource, overrideRow int,
 	previousLines := append([]string{}, e.buffer.PreviousLines()...)
 	version := e.buffer.Version()
 	filePath := e.buffer.Path()
-	linterErrors := e.buffer.LinterErrors()
 	viewportHeight := e.getViewportHeightConstraint()
 
 	go func() {
@@ -135,7 +143,7 @@ func (e *Engine) requestPrefetch(source types.CompletionSource, overrideRow int,
 			CursorCol:         overrideCol,
 			ViewportHeight:    viewportHeight,
 			MaxVisibleLines:   e.config.MaxVisibleLines,
-			LinterErrors:      linterErrors,
+			AdditionalContext: e.gatherContext(filePath),
 		})
 
 		if err != nil {

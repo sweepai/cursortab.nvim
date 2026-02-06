@@ -42,8 +42,8 @@ type CompletionRequest struct {
 	ViewportHeight int
 	// MaxVisibleLines limits max visible lines per completion (0 = no limit)
 	MaxVisibleLines int
-	// Linter errors if LSP is active
-	LinterErrors *LinterErrors
+	// AdditionalContext holds gathered context from context sources (diagnostics, etc.)
+	AdditionalContext *ContextResult
 	// RecentBufferSnapshots contains snapshots of recently accessed files for cross-file context
 	RecentBufferSnapshots []*RecentBufferSnapshot
 	// UserActions contains recent user edit actions for the current file
@@ -77,6 +77,19 @@ type LinterError struct {
 	Source   string
 	Severity string
 	Range    *CursorRange
+}
+
+// ContextResult holds gathered context from context sources
+type ContextResult struct {
+	Diagnostics *LinterErrors // LSP diagnostics (nil if unavailable)
+}
+
+// GetDiagnostics returns diagnostics from AdditionalContext, or nil if unavailable
+func (r *CompletionRequest) GetDiagnostics() *LinterErrors {
+	if r.AdditionalContext == nil {
+		return nil
+	}
+	return r.AdditionalContext.Diagnostics
 }
 
 // FileDiffHistory represents cumulative diffs for a specific file in the workspace

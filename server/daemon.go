@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cursortab/buffer"
+	"cursortab/ctx"
 	"cursortab/engine"
 	"cursortab/logger"
 	"cursortab/provider/copilot"
@@ -102,7 +103,7 @@ func NewDaemon(config Config) (*Daemon, error) {
 		},
 		MaxDiffTokens:   config.Provider.MaxDiffHistoryTokens,
 		MaxVisibleLines: config.Behavior.MaxVisibleLines,
-	}, engine.SystemClock)
+	}, engine.SystemClock, ctx.NewGatherer(buf))
 	if err != nil {
 		return nil, err
 	}

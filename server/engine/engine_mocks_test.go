@@ -24,8 +24,6 @@ type mockBuffer struct {
 	previousLines  []string
 	originalLines  []string
 	diffHistories  []*types.DiffEntry
-	linterErrors   *types.LinterErrors
-
 	// Track method calls
 	syncCalls              int
 	clearUICalls           int
@@ -181,12 +179,6 @@ func (b *mockBuffer) MoveCursor(line int, center, mark bool) error {
 	defer b.mu.Unlock()
 	b.row = line
 	return nil
-}
-
-func (b *mockBuffer) LinterErrors() *types.LinterErrors {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.linterErrors
 }
 
 func (b *mockBuffer) RegisterEventHandler(handler func(event string)) error {
@@ -368,7 +360,7 @@ func createTestEngine(buf *mockBuffer, prov *mockProvider, clock *mockClock) *En
 			AutoAdvance:        true,
 			ProximityThreshold: 3,
 		},
-	}, clock)
+	}, clock, nil)
 	return eng
 }
 

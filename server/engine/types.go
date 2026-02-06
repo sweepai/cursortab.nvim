@@ -31,7 +31,6 @@ type Buffer interface {
 	ShowCursorTarget(line int) error
 	ClearUI() error
 	MoveCursor(line int, center, mark bool) error
-	LinterErrors() *types.LinterErrors
 	RegisterEventHandler(handler func(event string)) error
 	// Partial accept operations
 	InsertText(line, col int, text string) error // Insert text at position (1-indexed line, 0-indexed col)

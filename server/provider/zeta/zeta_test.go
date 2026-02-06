@@ -73,15 +73,17 @@ func TestFormatDiagnosticsForPrompt_Empty(t *testing.T) {
 
 func TestFormatDiagnosticsForPrompt_WithErrors(t *testing.T) {
 	req := &types.CompletionRequest{
-		LinterErrors: &types.LinterErrors{
-			RelativeWorkspacePath: "src/main.go",
-			Errors: []*types.LinterError{
-				{
-					Severity: "error",
-					Message:  "undefined: foo",
-					Source:   "gopls",
-					Range: &types.CursorRange{
-						StartLine: 10,
+		AdditionalContext: &types.ContextResult{
+			Diagnostics: &types.LinterErrors{
+				RelativeWorkspacePath: "src/main.go",
+				Errors: []*types.LinterError{
+					{
+						Severity: "error",
+						Message:  "undefined: foo",
+						Source:   "gopls",
+						Range: &types.CursorRange{
+							StartLine: 10,
+						},
 					},
 				},
 			},
@@ -185,7 +187,7 @@ func TestParseCompletion_StripsMarkers(t *testing.T) {
 
 	assert.True(t, ok, "should succeed")
 	// The cursor marker should be stripped
-	if resp.Completions != nil && len(resp.Completions) > 0 {
+	if len(resp.Completions) > 0 {
 		assert.False(t, strings.Contains(resp.Completions[0].Lines[0], "<|user_cursor_is_here|>"), "cursor marker stripped")
 	}
 }

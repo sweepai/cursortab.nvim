@@ -140,18 +140,19 @@ func buildUserExcerpt(req *types.CompletionRequest, ctx *provider.Context) strin
 }
 
 func formatDiagnosticsForPrompt(req *types.CompletionRequest) string {
-	if req.LinterErrors == nil || len(req.LinterErrors.Errors) == 0 {
+	diag := req.GetDiagnostics()
+	if diag == nil || len(diag.Errors) == 0 {
 		return ""
 	}
 
 	var diagBuilder strings.Builder
 
 	diagBuilder.WriteString("Diagnostics in \"")
-	diagBuilder.WriteString(req.LinterErrors.RelativeWorkspacePath)
+	diagBuilder.WriteString(diag.RelativeWorkspacePath)
 	diagBuilder.WriteString("\":\n")
 	diagBuilder.WriteString("```diagnostics\n")
 
-	for _, err := range req.LinterErrors.Errors {
+	for _, err := range diag.Errors {
 		if err.Range != nil {
 			fmt.Fprintf(&diagBuilder, "line %d: ", err.Range.StartLine)
 		}
