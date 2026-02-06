@@ -149,16 +149,19 @@ For detailed configuration documentation, see `:help cursortab-config`.
 The plugin supports six AI provider backends: Inline, FIM, Sweep, Sweep API,
 Zeta, and Copilot.
 
-| Provider  | Multi-line | Multi-edit | Cursor Prediction | Model                         |
-| --------- | :--------: | :--------: | :---------------: | ----------------------------- |
-| Inline    |            |            |                   | Any base model                |
-| FIM       |     ✓      |            |                   | Any FIM-capable               |
-| Sweep     |     ✓      |     ✓      |         ✓         | `sweep-next-edit-1.5b`        |
-| Sweep API |     ✓      |     ✓      |         ✓         | `sweep-next-edit-7b` (hosted) |
-| Zeta      |     ✓      |     ✓      |         ✓         | `zeta`                        |
-| Copilot   |     ✓      |     ✓      |         ✓         | GitHub Copilot                |
+| Provider   | Hosted | Multi-line | Multi-edit | Cursor Prediction | Streaming | Model                  |
+| ---------- | :----: | :--------: | :--------: | :---------------: | :-------: | ---------------------- |
+| `inline`   |        |            |            |                   |     ✓     | Any base model         |
+| `fim`      |        |     ✓      |            |                   |     ✓     | Any FIM-capable        |
+| `sweep`    |        |     ✓      |     ✓      |         ✓         |     ✓     | `sweep-next-edit-1.5b` |
+| `sweepapi` |   ✓    |     ✓      |     ✓      |         ✓         |           | `sweep-next-edit-7b`   |
+| `zeta`     |        |     ✓      |     ✓      |         ✓         |     ✓     | `zeta`                 |
+| `copilot`  |   ✓    |     ✓      |     ✓      |         ✓         |           | GitHub Copilot         |
 
 #### Inline Provider (Default)
+
+<details>
+<summary>Details</summary>
 
 End-of-line completion using OpenAI-compatible API endpoints. Works with any
 OpenAI-compatible `/v1/completions` endpoint.
@@ -185,7 +188,12 @@ require("cursortab").setup({
 llama-server -hf ggml-org/Qwen2.5-Coder-1.5B-Q8_0-GGUF --port 8000
 ```
 
+</details>
+
 #### FIM Provider
+
+<details>
+<summary>Details</summary>
 
 Fill-in-the-Middle completion using standard FIM tokens. Uses both prefix
 (before cursor) and suffix (after cursor) context. Compatible with Qwen,
@@ -223,7 +231,12 @@ llama-server \
     --cache-reuse 256
 ```
 
+</details>
+
 #### Sweep Provider
+
+<details>
+<summary>Details</summary>
 
 Sweep Next-Edit 1.5B model for fast, accurate next-edit predictions. Sends full
 file for small files, trimmed around cursor for large files.
@@ -255,7 +268,12 @@ llama-server -hf sweepai/sweep-next-edit-1.5b-GGUF --port 8000
 llama-server -m sweep-next-edit-1.5b.q8_0.v2.gguf --port 8000
 ```
 
+</details>
+
 #### Sweep API Provider
+
+<details>
+<summary>Details</summary>
 
 Sweep's hosted API for Next-Edit predictions. No local model setup required.
 
@@ -284,7 +302,12 @@ require("cursortab").setup({
 })
 ```
 
+</details>
+
 #### Zeta Provider
+
+<details>
+<summary>Details</summary>
 
 Zed's Zeta model - a Qwen2.5-Coder-7B fine-tuned for edit prediction using DPO
 and SFT.
@@ -316,7 +339,12 @@ vllm serve zed-industries/zeta --served-model-name zeta --port 8000
 # See the HuggingFace page for optimized deployment options
 ```
 
+</details>
+
 #### Copilot Provider
+
+<details>
+<summary>Details</summary>
 
 GitHub Copilot completions using the official
 [copilot-language-server](https://github.com/github/copilot-language-server-release)
@@ -345,7 +373,12 @@ require("cursortab").setup({
 })
 ```
 
+</details>
+
 ### blink.cmp Integration
+
+<details>
+<summary>Details</summary>
 
 This integration exposes a minimal blink source that only consumes
 `append_chars` (end-of-line ghost text). Complex diffs (multi-line edits,
@@ -377,6 +410,8 @@ require("blink.cmp").setup({
   },
 })
 ```
+
+</details>
 
 ## Usage
 
