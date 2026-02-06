@@ -14,7 +14,10 @@ const GatherTimeout = 200 * time.Millisecond
 
 // SourceRequest contains metadata passed to each context source.
 type SourceRequest struct {
-	FilePath string
+	FilePath      string
+	CursorRow     int // 1-indexed
+	CursorCol     int // 0-indexed
+	WorkspacePath string
 }
 
 // NewGatherer creates a Gatherer with all built-in context sources.
@@ -22,6 +25,8 @@ func NewGatherer(buf *buffer.NvimBuffer) *Gatherer {
 	return &Gatherer{
 		sources: []source{
 			&diagnostics{buffer: buf},
+			&treesitter{buffer: buf},
+			&gitDiff{},
 		},
 	}
 }
@@ -69,6 +74,12 @@ func (g *Gatherer) Gather(ctx context.Context, req *SourceRequest) *types.Contex
 		}
 		if r.Diagnostics != nil {
 			merged.Diagnostics = r.Diagnostics
+		}
+		if r.Treesitter != nil {
+			merged.Treesitter = r.Treesitter
+		}
+		if r.GitDiff != nil {
+			merged.GitDiff = r.GitDiff
 		}
 	}
 

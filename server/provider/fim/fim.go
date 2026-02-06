@@ -1,3 +1,14 @@
+// Package fim implements a fill-in-the-middle completion provider.
+//
+// Prompt format (sent as a single text prompt to /v1/completions):
+//
+//	<|fim_prefix|>...lines before cursor...
+//	...text before cursor on current line...<|fim_suffix|>...text after cursor on current line...
+//	...lines after cursor...<|fim_middle|>
+//
+// The FIM token names are configurable via FIMTokenConfig.
+// The model fills in text between the prefix and suffix.
+// Lines are trimmed to a window around the cursor via the TrimContent preprocessor.
 package fim
 
 import (

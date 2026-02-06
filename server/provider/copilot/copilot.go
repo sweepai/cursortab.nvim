@@ -1,3 +1,18 @@
+// Package copilot implements the GitHub Copilot NES (Next-Edit Suggestion) provider.
+//
+// This provider delegates to the Copilot LSP server already running in Neovim.
+// No prompt is built in Go — instead, a textDocument/copilotInlineEdit LSP request
+// is sent via Neovim RPC:
+//
+//	{
+//	  "textDocument": {"uri": "file:///path/to/file.go", "version": 5},
+//	  "position":     {"line": 9, "character": 12},     // 0-indexed
+//	  "context":      {"triggerKind": 2}
+//	}
+//
+// The Copilot LSP responds with an array of edits (LSP TextEdit format with
+// UTF-16 character offsets), which are converted to line-based completions.
+// Telemetry commands attached to edits are executed on accept.
 package copilot
 
 import (

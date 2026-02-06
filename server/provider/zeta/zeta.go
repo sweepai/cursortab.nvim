@@ -1,3 +1,50 @@
+// Package zeta implements the Zeta provider (Zed's native model).
+//
+// Prompt format (sent as a single text prompt to /v1/completions):
+//
+//	### Instruction:
+//	You are a code completion assistant and your task is to analyze user edits
+//	and then rewrite an excerpt that the user provides, suggesting the appropriate
+//	edits within the excerpt, taking into account the cursor location.
+//
+//	### User Edits:
+//	User edited "file.go":
+//	```diff
+//	-old line
+//	+new line
+//	```
+//
+//	### Diagnostics:                       (omitted if no diagnostics)
+//	Diagnostics in "file.go":
+//	```diagnostics
+//	line 10: [DIAGNOSTIC_SEVERITY_ERROR] undefined: foo (source: gopls)
+//	```
+//
+//	### Code Context:                      (omitted if no treesitter context)
+//	Language: go
+//	Enclosing scope: func handleRequest(w http.ResponseWriter, r *http.Request) {
+//	Sibling symbols:
+//	  line 5: func otherFunc() {
+//	Imports:
+//	  import "net/http"
+//
+//	### Staged Changes:                    (omitted if not COMMIT_EDITMSG)
+//	(full unified diff if ≤4KB, or extracted symbols in git diff format:)
+//	+func newHelper(ctx context.Context) error {
+//	-func oldHelper() error {
+//
+//	### User Excerpt:
+//	```file.go
+//	<|start_of_file|>
+//	... context lines ...
+//	<|editable_region_start|>
+//	... before cursor ...<|user_cursor_is_here|>... after cursor ...
+//	... more lines ...
+//	<|editable_region_end|>
+//	... context lines ...
+//	```
+//
+//	### Response:
 package zeta
 
 import (
@@ -48,7 +95,9 @@ func buildPrompt(p *provider.Provider, ctx *provider.Context) *openai.Completion
 		userEdits = p.DiffBuilder(req.FileDiffHistories)
 	}
 	diagnosticsText := formatDiagnosticsForPrompt(req)
-	prompt := buildInstructionPrompt(userEdits, diagnosticsText, userExcerpt)
+	treesitterText := formatTreesitterForPrompt(req)
+	gitDiffText := formatGitDiffForPrompt(req)
+	prompt := buildInstructionPrompt(userEdits, diagnosticsText, treesitterText, gitDiffText, userExcerpt)
 
 	return &openai.CompletionRequest{
 		Model:       p.Config.ProviderModel,
@@ -169,7 +218,45 @@ func formatDiagnosticsForPrompt(req *types.CompletionRequest) string {
 	return diagBuilder.String()
 }
 
-func buildInstructionPrompt(userEdits, diagnostics, userExcerpt string) string {
+func formatTreesitterForPrompt(req *types.CompletionRequest) string {
+	ts := req.GetTreesitter()
+	if ts == nil {
+		return ""
+	}
+
+	var b strings.Builder
+
+	if ts.EnclosingSignature != "" {
+		fmt.Fprintf(&b, "Language: %s\n", ts.Language)
+		fmt.Fprintf(&b, "Enclosing scope: %s\n", ts.EnclosingSignature)
+	}
+
+	if len(ts.Siblings) > 0 {
+		b.WriteString("Sibling symbols:\n")
+		for _, s := range ts.Siblings {
+			fmt.Fprintf(&b, "  line %d: %s\n", s.Line, s.Signature)
+		}
+	}
+
+	if len(ts.Imports) > 0 {
+		b.WriteString("Imports:\n")
+		for _, imp := range ts.Imports {
+			fmt.Fprintf(&b, "  %s\n", imp)
+		}
+	}
+
+	return b.String()
+}
+
+func formatGitDiffForPrompt(req *types.CompletionRequest) string {
+	gd := req.GetGitDiff()
+	if gd == nil || gd.Diff == "" {
+		return ""
+	}
+	return gd.Diff
+}
+
+func buildInstructionPrompt(userEdits, diagnostics, treesitterCtx, gitDiffCtx, userExcerpt string) string {
 	var promptBuilder strings.Builder
 
 	promptBuilder.WriteString("### Instruction:\n")
@@ -182,6 +269,18 @@ func buildInstructionPrompt(userEdits, diagnostics, userExcerpt string) string {
 	if diagnostics != "" {
 		promptBuilder.WriteString("### Diagnostics:\n\n")
 		promptBuilder.WriteString(diagnostics)
+		promptBuilder.WriteString("\n\n")
+	}
+
+	if treesitterCtx != "" {
+		promptBuilder.WriteString("### Code Context:\n\n")
+		promptBuilder.WriteString(treesitterCtx)
+		promptBuilder.WriteString("\n\n")
+	}
+
+	if gitDiffCtx != "" {
+		promptBuilder.WriteString("### Staged Changes:\n\n")
+		promptBuilder.WriteString(gitDiffCtx)
 		promptBuilder.WriteString("\n\n")
 	}
 

@@ -100,20 +100,24 @@ func TestFormatDiagnosticsForPrompt_WithErrors(t *testing.T) {
 }
 
 func TestBuildInstructionPrompt(t *testing.T) {
-	result := buildInstructionPrompt("user edits", "diagnostics", "user excerpt")
+	result := buildInstructionPrompt("user edits", "diagnostics", "treesitter ctx", "git diff", "user excerpt")
 
 	assert.True(t, strings.Contains(result, "### Instruction:"), "should have instruction")
 	assert.True(t, strings.Contains(result, "### User Edits:"), "should have edits section")
 	assert.True(t, strings.Contains(result, "user edits"), "should have edits content")
 	assert.True(t, strings.Contains(result, "### Diagnostics:"), "should have diagnostics section")
+	assert.True(t, strings.Contains(result, "### Code Context:"), "should have code context section")
+	assert.True(t, strings.Contains(result, "### Staged Changes:"), "should have staged changes section")
 	assert.True(t, strings.Contains(result, "### User Excerpt:"), "should have excerpt section")
 	assert.True(t, strings.Contains(result, "### Response:"), "should have response marker")
 }
 
 func TestBuildInstructionPrompt_NoDiagnostics(t *testing.T) {
-	result := buildInstructionPrompt("user edits", "", "user excerpt")
+	result := buildInstructionPrompt("user edits", "", "", "", "user excerpt")
 
 	assert.False(t, strings.Contains(result, "### Diagnostics:"), "should not have diagnostics section")
+	assert.False(t, strings.Contains(result, "### Code Context:"), "should not have code context section")
+	assert.False(t, strings.Contains(result, "### Staged Changes:"), "should not have staged changes section")
 }
 
 func TestParseCompletion_WithEditableRegion(t *testing.T) {

@@ -1,6 +1,38 @@
+// Package sweep implements the Sweep Next-Edit model provider.
+//
+// Prompt format (sent as a single text prompt to /v1/completions):
+//
+//	<|file_sep|>file.go.diff          (diff history, if any)
+//	<<<<<<< ORIGINAL
+//	old line
+//	=======
+//	new line
+//	>>>>>>> UPDATED
+//
+//	<|file_sep|>context/treesitter    (omitted if no treesitter context)
+//	Language: go
+//	Enclosing scope: func handleRequest(...) {
+//	Sibling: func otherFunc() {
+//	Import: import "net/http"
+//
+//	<|file_sep|>context/staged_diff   (omitted if not COMMIT_EDITMSG)
+//	(full unified diff if ≤4KB, or extracted symbols in git diff format:)
+//	+func newHelper(ctx context.Context) error {
+//	-func oldHelper() error {
+//
+//	<|file_sep|>original/file.go      (file content before edits)
+//	...original lines in trimmed window...
+//
+//	<|file_sep|>current/file.go       (file content as-is now)
+//	...current lines in trimmed window...
+//
+//	<|file_sep|>updated/file.go       (model completes from here)
+//
+// Stop tokens: <|file_sep|>, </s>
 package sweep
 
 import (
+	"fmt"
 	"strings"
 
 	"cursortab/client/openai"
@@ -70,6 +102,14 @@ func buildPrompt(p *provider.Provider, ctx *provider.Context) *openai.Completion
 		promptBuilder.WriteString(diffSection)
 	}
 
+	if ts := formatTreesitterSection(req); ts != "" {
+		promptBuilder.WriteString(ts)
+	}
+
+	if gd := formatGitDiffSection(req); gd != "" {
+		promptBuilder.WriteString(gd)
+	}
+
 	promptBuilder.WriteString("<|file_sep|>original/")
 	promptBuilder.WriteString(req.FilePath)
 	promptBuilder.WriteString("\n")
@@ -96,6 +136,39 @@ func buildPrompt(p *provider.Provider, ctx *provider.Context) *openai.Completion
 		N:           1,
 		Echo:        false,
 	}
+}
+
+func formatTreesitterSection(req *types.CompletionRequest) string {
+	ts := req.GetTreesitter()
+	if ts == nil {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("<|file_sep|>context/treesitter\n")
+
+	if ts.EnclosingSignature != "" {
+		fmt.Fprintf(&b, "Language: %s\n", ts.Language)
+		fmt.Fprintf(&b, "Enclosing scope: %s\n", ts.EnclosingSignature)
+	}
+
+	for _, s := range ts.Siblings {
+		fmt.Fprintf(&b, "Sibling: %s\n", s.Signature)
+	}
+
+	for _, imp := range ts.Imports {
+		fmt.Fprintf(&b, "Import: %s\n", imp)
+	}
+
+	return b.String()
+}
+
+func formatGitDiffSection(req *types.CompletionRequest) string {
+	gd := req.GetGitDiff()
+	if gd == nil || gd.Diff == "" {
+		return ""
+	}
+	return "<|file_sep|>context/staged_diff\n" + gd.Diff
 }
 
 func getTrimmedOriginalContent(req *types.CompletionRequest, trimOffset, lineCount int) []string {

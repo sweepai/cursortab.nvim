@@ -1,3 +1,24 @@
+// Package sweepapi implements the Sweep hosted API provider.
+//
+// Sends a JSON request to the Sweep autocomplete endpoint:
+//
+//	{
+//	  "repo_name":          "my-project",
+//	  "file_path":          "src/main.go",
+//	  "file_contents":      "...full file text...",
+//	  "cursor_position":    1234,                    // byte offset
+//	  "recent_changes":     "File: main.go:\n<<<<<<< ORIGINAL\n...\n=======\n...\n>>>>>>> UPDATED\n",
+//	  "file_chunks":        [...recent buffer snapshots as FileChunk...],
+//	  "recent_user_actions": [...user edit actions...],
+//	  "retrieval_chunks": [
+//	    {"file_path": "diagnostics",         "content": "Line 10: [gopls] undefined: foo\n", ...},
+//	    {"file_path": "treesitter_context",  "content": "Language: go\nEnclosing scope: ...\n", ...},
+//	    {"file_path": "staged_git_diff",     "content": "<full diff or +/-symbol lines>", ...}
+//	  ]
+//	}
+//
+// The response contains byte-range edits (start_index, end_index, completion text)
+// that are converted to line-based completions.
 package sweepapi
 
 import (
@@ -267,8 +288,10 @@ func (p *Provider) GetCompletion(ctx context.Context, req *types.CompletionReque
 	diffHistories := truncateDiffHistories(req.FileDiffHistories)
 	recentChanges := formatRecentChanges(diffHistories)
 
-	// Format diagnostics as retrieval chunks
+	// Format diagnostics, treesitter, and git diff as retrieval chunks
 	retrievalChunks := formatDiagnostics(req.GetDiagnostics())
+	retrievalChunks = append(retrievalChunks, formatTreesitterChunk(req.GetTreesitter())...)
+	retrievalChunks = append(retrievalChunks, formatGitDiffChunk(req.GetGitDiff())...)
 
 	// Extract repo name from workspace path
 	repoName := filepath.Base(req.WorkspacePath)
@@ -466,6 +489,68 @@ func buildFileChunks(snapshots []*types.RecentBufferSnapshot) []sweepapi.FileChu
 		totalLines += lineCount
 	}
 	return chunks
+}
+
+// formatTreesitterChunk converts TreesitterContext to a FileChunk for the API
+func formatTreesitterChunk(ts *types.TreesitterContext) []sweepapi.FileChunk {
+	if ts == nil {
+		return nil
+	}
+
+	var sb strings.Builder
+
+	if ts.EnclosingSignature != "" {
+		sb.WriteString("Language: ")
+		sb.WriteString(ts.Language)
+		sb.WriteString("\nEnclosing scope: ")
+		sb.WriteString(ts.EnclosingSignature)
+		sb.WriteString("\n")
+	}
+
+	if len(ts.Siblings) > 0 {
+		sb.WriteString("Sibling symbols:\n")
+		for _, s := range ts.Siblings {
+			sb.WriteString("  line ")
+			sb.WriteString(strconv.Itoa(s.Line))
+			sb.WriteString(": ")
+			sb.WriteString(s.Signature)
+			sb.WriteString("\n")
+		}
+	}
+
+	if len(ts.Imports) > 0 {
+		sb.WriteString("Imports:\n")
+		for _, imp := range ts.Imports {
+			sb.WriteString("  ")
+			sb.WriteString(imp)
+			sb.WriteString("\n")
+		}
+	}
+
+	if sb.Len() == 0 {
+		return nil
+	}
+
+	return []sweepapi.FileChunk{{
+		FilePath:  "treesitter_context",
+		Content:   sb.String(),
+		StartLine: 1,
+		EndLine:   strings.Count(sb.String(), "\n"),
+	}}
+}
+
+// formatGitDiffChunk converts GitDiffContext to a FileChunk for the API
+func formatGitDiffChunk(gd *types.GitDiffContext) []sweepapi.FileChunk {
+	if gd == nil || gd.Diff == "" {
+		return nil
+	}
+
+	return []sweepapi.FileChunk{{
+		FilePath:  "staged_git_diff",
+		Content:   gd.Diff,
+		StartLine: 1,
+		EndLine:   strings.Count(gd.Diff, "\n"),
+	}}
 }
 
 // convertUserActions converts types.UserAction to sweepapi.UserAction.

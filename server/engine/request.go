@@ -16,7 +16,12 @@ func (e *Engine) gatherContext(filePath string) *types.ContextResult {
 	if e.contextGatherer == nil {
 		return nil
 	}
-	return e.contextGatherer.Gather(e.mainCtx, &ctx.SourceRequest{FilePath: filePath})
+	return e.contextGatherer.Gather(e.mainCtx, &ctx.SourceRequest{
+		FilePath:      filePath,
+		CursorRow:     e.buffer.Row(),
+		CursorCol:     e.buffer.Col(),
+		WorkspacePath: e.WorkspacePath,
+	})
 }
 
 // requestCompletion initiates a completion request.

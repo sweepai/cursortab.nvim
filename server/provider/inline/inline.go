@@ -1,3 +1,14 @@
+// Package inline implements a simple end-of-line completion provider.
+//
+// Prompt format (sent as a single text prompt to /v1/completions):
+//
+//	...all lines before cursor line...
+//	...text before cursor on current line...
+//
+// The model completes from the cursor position to end of line.
+// Stop token: \n (single-line completions only).
+// Lines are trimmed to a window around the cursor via the TrimContent preprocessor.
+// Token-by-token streaming is used for ghost text display.
 package inline
 
 import (

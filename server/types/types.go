@@ -79,9 +79,32 @@ type LinterError struct {
 	Range    *CursorRange
 }
 
+// TreesitterContext holds treesitter-derived scope information around the cursor
+type TreesitterContext struct {
+	Language           string
+	EnclosingSignature string
+	Siblings           []*TreesitterSymbol
+	Imports            []string
+}
+
+// TreesitterSymbol represents a named symbol extracted from treesitter
+type TreesitterSymbol struct {
+	Name      string
+	Signature string
+	Line      int // 1-indexed
+}
+
+// GitDiffContext holds staged git diff information for commit message editing.
+// Contains either the full unified diff (when small) or extracted symbol lines.
+type GitDiffContext struct {
+	Diff string // Full unified diff or symbol summary in git diff format
+}
+
 // ContextResult holds gathered context from context sources
 type ContextResult struct {
-	Diagnostics *LinterErrors // LSP diagnostics (nil if unavailable)
+	Diagnostics *LinterErrors      // LSP diagnostics (nil if unavailable)
+	Treesitter  *TreesitterContext // Treesitter scope context (nil if unavailable)
+	GitDiff     *GitDiffContext    // Staged git diff (nil if not COMMIT_EDITMSG)
 }
 
 // GetDiagnostics returns diagnostics from AdditionalContext, or nil if unavailable
@@ -90,6 +113,22 @@ func (r *CompletionRequest) GetDiagnostics() *LinterErrors {
 		return nil
 	}
 	return r.AdditionalContext.Diagnostics
+}
+
+// GetTreesitter returns treesitter context from AdditionalContext, or nil if unavailable
+func (r *CompletionRequest) GetTreesitter() *TreesitterContext {
+	if r.AdditionalContext == nil {
+		return nil
+	}
+	return r.AdditionalContext.Treesitter
+}
+
+// GetGitDiff returns git diff context from AdditionalContext, or nil if unavailable
+func (r *CompletionRequest) GetGitDiff() *GitDiffContext {
+	if r.AdditionalContext == nil {
+		return nil
+	}
+	return r.AdditionalContext.GitDiff
 }
 
 // FileDiffHistory represents cumulative diffs for a specific file in the workspace
