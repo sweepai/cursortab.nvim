@@ -59,7 +59,7 @@ func NewDaemon(config Config) (*Daemon, error) {
 		CompletionPath:      config.Provider.CompletionPath,
 		CompletionTimeout:   config.Provider.CompletionTimeout,
 		PrivacyMode:         config.Provider.PrivacyMode,
-		Version:             "0.4.8-beta", // AUTO-UPDATED by release workflow
+		Version:             "0.4.9-beta", // AUTO-UPDATED by release workflow
 	}
 
 	providerConfig.FIMTokens = types.FIMTokenConfig{
