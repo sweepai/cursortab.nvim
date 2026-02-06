@@ -611,34 +611,28 @@ func isComplexModification(deletedText, insertedText string) bool {
 	deletedWords := len(strings.Fields(deletedText))
 	insertedWords := len(strings.Fields(insertedText))
 
-	// Too many words = complex modification
-	if deletedWords > 2 || insertedWords > 2 {
+	if deletedWords > ComplexModWordCountThreshold || insertedWords > ComplexModWordCountThreshold {
 		return true
 	}
 
-	// Large word count difference = complex modification
-	if utils.Abs(deletedWords-insertedWords) > 1 {
+	if utils.Abs(deletedWords-insertedWords) > MaxWordCountDifference {
 		return true
 	}
 
-	// Check length ratio (avoid division by zero)
 	deletedLen := len(deletedText)
 	insertedLen := len(insertedText)
 
 	if deletedLen == 0 {
-		// Deletion is empty but insertion exists - treat as modification if insertion is substantial
-		return insertedLen > 10
+		return insertedLen > MinLengthForEmptyDeletion
 	}
 
 	lengthRatio := float64(insertedLen) / float64(deletedLen)
 
-	// For single-word changes, be lenient (allow up to 3x difference)
 	if deletedWords == 1 && insertedWords == 1 {
-		return lengthRatio > 3.0 || lengthRatio < 0.33
+		return lengthRatio > SingleWordMaxRatio || lengthRatio < SingleWordMinRatio
 	}
 
-	// For other cases, be stricter (allow up to 2x difference)
-	return lengthRatio > 2.0 || lengthRatio < 0.5
+	return lengthRatio > MultiWordMaxRatio || lengthRatio < MultiWordMinRatio
 }
 
 // FindFirstChangedLine compares old lines with new lines and returns the first line number (1-indexed)

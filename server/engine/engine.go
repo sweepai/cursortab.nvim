@@ -45,6 +45,10 @@ const MaxUserActions = 16
 // FileChunkLines is the number of lines to capture from each file for FileChunks context
 const FileChunkLines = 30
 
+// MaxRecentBufferSnapshots is the number of recently accessed files to include
+// as cross-file context in completion requests.
+const MaxRecentBufferSnapshots = 3
+
 type Engine struct {
 	WorkspacePath string
 	WorkspaceID   string

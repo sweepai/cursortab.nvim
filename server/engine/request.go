@@ -46,7 +46,7 @@ func (e *Engine) requestCompletion(source types.CompletionSource) {
 		ViewportHeight:        e.getViewportHeightConstraint(),
 		MaxVisibleLines:       e.config.MaxVisibleLines,
 		AdditionalContext:     e.gatherContext(e.buffer.Path()),
-		RecentBufferSnapshots: e.getRecentBufferSnapshots(e.buffer.Path(), 3),
+		RecentBufferSnapshots: e.getRecentBufferSnapshots(e.buffer.Path(), MaxRecentBufferSnapshots),
 		UserActions:           e.getUserActionsForFile(e.buffer.Path()),
 	}
 

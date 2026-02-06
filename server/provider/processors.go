@@ -11,6 +11,24 @@ import (
 	"strings"
 )
 
+const (
+	// AnchorSimilarityThreshold is the minimum similarity score required
+	// to accept a line as an anchor match.
+	AnchorSimilarityThreshold = 0.7
+
+	// MinLinesForAnchorValidation is the minimum number of old lines required
+	// before anchor position validation is applied.
+	MinLinesForAnchorValidation = 10
+
+	// AnchorSearchBefore is the number of lines to search before the expected
+	// position when looking for anchor matches.
+	AnchorSearchBefore = 2
+
+	// AnchorSearchAfter is the number of lines to search after the expected
+	// position when looking for anchor matches.
+	AnchorSearchAfter = 5
+)
+
 // Preprocessor processes the context before prompt building.
 // Return ErrSkipCompletion to skip without error, or another error to fail.
 type Preprocessor func(p *Provider, ctx *Context) error
@@ -263,7 +281,7 @@ func AnchorTruncation(threshold float64) Postprocessor {
 			return p.EmptyResponse(), true
 		}
 
-		if len(oldLines) > 10 {
+		if len(oldLines) > MinLinesForAnchorValidation {
 			minAllowedLines := int(float64(len(oldLines)) * threshold)
 			if len(processedLines) < minAllowedLines {
 				logger.Debug("%s: rejected, too few lines (%d < %d min)",
@@ -284,7 +302,7 @@ func AnchorTruncation(threshold float64) Postprocessor {
 // checkAnchorPosition validates that a first line anchors within acceptable range.
 // Returns (anchorIdx, maxAllowed, shouldReject).
 func checkAnchorPosition(firstLine string, oldLines []string, maxRatio float64) (int, int, bool) {
-	if len(oldLines) <= 10 {
+	if len(oldLines) <= MinLinesForAnchorValidation {
 		return -1, 0, false
 	}
 	anchorIdx := findAnchorLineFullSearch(firstLine, oldLines)
@@ -334,10 +352,10 @@ func findAnchorLine(needle string, oldLines []string, expectedPos int) int {
 	}
 
 	bestIdx := -1
-	bestSimilarity := 0.7
+	bestSimilarity := AnchorSimilarityThreshold
 
-	searchStart := max(0, expectedPos-2)
-	searchEnd := min(len(oldLines), expectedPos+5)
+	searchStart := max(0, expectedPos-AnchorSearchBefore)
+	searchEnd := min(len(oldLines), expectedPos+AnchorSearchAfter)
 
 	for i := searchStart; i < searchEnd; i++ {
 		similarity := text.LineSimilarity(needle, oldLines[i])
@@ -359,7 +377,7 @@ func findAnchorLineFullSearch(needle string, oldLines []string) int {
 	}
 
 	bestIdx := -1
-	bestSimilarity := 0.7
+	bestSimilarity := AnchorSimilarityThreshold
 
 	for i, line := range oldLines {
 		similarity := text.LineSimilarity(needle, line)
